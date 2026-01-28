@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>BRAVO (PoC) — Placeholder Version</title>
+  <title>BRAVO (PoC) — Placeholder Widget</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { font-family: "Segoe UI", system-ui, Arial, sans-serif; }
     body { margin: 0; padding: 12px; }
     button { padding: 6px 10px; cursor: pointer; }
     textarea { width: 100%; box-sizing: border-box; }
-    h3 { margin: 0 0 6px 0; }
+    h3 { margin: 0 0 8px 0; }
     h4 { margin-top: 16px; }
     ul { margin: 6px 0 0 18px; }
     .badge { background: #e8e8e8; padding: 3px 6px; border-radius: 6px; font-size: 11px; }
@@ -20,48 +20,103 @@
   <h3>BRAVO (PoC) <span class="badge">placeholder</span></h3>
 
   <div style="margin: 8px 0;">
-    Conversation: <b id="convId">POC-CONV-12345</b>
+    Conversation: <b id="convId">(loading…)</b>
   </div>
 
-  <div>
+  <div style="margin: 10px 0;">
+    <button id="btnRefresh">Refresh Context</button>
     <button id="btnInsert" disabled>Insert Suggested Reply</button>
   </div>
 
+  <!-- Placeholder Panels -->
   <h4>Relevant Information</h4>
   <ul id="relevantInfo">
-    <li><i>(Placeholder)</i> Customer mentioned an issue with their bill.</li>
-    <li><i>(Placeholder)</i> Customer recently changed plans.</li>
+    <li><i>(Placeholder)</i> Customer details or main issue summarised here.</li>
+    <li><i>(Placeholder)</i> Key fact relevant to the conversation.</li>
   </ul>
 
   <h4>Suggested Next Steps</h4>
   <ul id="nextSteps">
-    <li><i>(Placeholder)</i> Verify customer identity.</li>
-    <li><i>(Placeholder)</i> Review recent plan changes.</li>
-    <li><i>(Placeholder)</i> Check billing history.</li>
+    <li><i>(Placeholder)</i> Step 1 the advisor should take.</li>
+    <li><i>(Placeholder)</i> Step 2 the advisor should take.</li>
   </ul>
 
   <h4>Suggested Reply</h4>
   <textarea id="suggestedReply" rows="4" readonly>
-(Placeholder) Thanks for reaching out! I can help check this for you. 
-Before I get started, can I please confirm a couple of details?
+(Placeholder) Thanks for getting in touch! I can help with that. 
+Can I please confirm a couple of details so I can securely access your account?
   </textarea>
 
-  <script>
-    // Eventually replace this with:
-    // window.LPWidget.api.setComposerText({ conversationId, text });
+  <!-- Latest Messages -->
+  <h4>Latest Messages</h4>
+  <ul id="msgs"></ul>
+  <small>(Replace stubbed functions with LP Widget SDK to fetch real messages)</small>
 
-    function insertIntoComposer(text) {
-      alert("Would insert into composer:\n\n" + text);
-    }
+<script>
+  // =======================================================
+  //  STUBS — Replace with LivePerson Widget SDK later
+  // =======================================================
 
-    const replyBox = document.querySelector("#suggestedReply");
-    const insertBtn = document.querySelector("#btnInsert");
+  async function getActiveConversationId() {
+    // LP SDK example:
+    // return window.LPWidget.context.activeConversationId();
+    return "POC-CONV-12345";
+  }
 
-    insertBtn.disabled = false;
-    insertBtn.addEventListener("click", () => {
-      insertIntoComposer(replyBox.value);
+  async function fetchTranscript(convId, limit = 5) {
+    // LP SDK example:
+    // return window.LPWidget.api.getMessages({ conversationId: convId, limit });
+    return [
+      { from: "customer", text: "Hey, my bill is higher this month." },
+      { from: "agent", text: "I can check that for you." },
+      { from: "customer", text: "I changed plans recently." }
+    ];
+  }
+
+  function insertIntoComposer(text) {
+    // LP SDK example:
+    // window.LPWidget.api.setComposerText({ conversationId: convId, text });
+    alert("Would insert into composer:\n\n" + text);
+  }
+
+  // =======================================================
+  //  SIMPLE STATE + RENDER
+  // =======================================================
+
+  const state = { convId: "", messages: [] };
+  const $ = (sel) => document.querySelector(sel);
+
+  function render() {
+    // show conversation ID
+    $("#convId").textContent = state.convId || "(none)";
+
+    // latest messages list
+    const msgList = $("#msgs");
+    msgList.innerHTML = "";
+    state.messages.forEach(m => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
+      msgList.appendChild(li);
     });
 
-  </script>
+    // suggested reply (placeholder)
+    const replyText = $("#suggestedReply").value.trim();
+    $("#btnInsert").disabled = !replyText;
+  }
+
+  async function refreshContext() {
+    state.convId = await getActiveConversationId();
+    state.messages = await fetchTranscript(state.convId, 5);
+    render();
+  }
+
+  $("#btnRefresh").addEventListener("click", refreshContext);
+  $("#btnInsert").addEventListener("click", () => {
+    insertIntoComposer($("#suggestedReply").value);
+  });
+
+  // Load immediately
+  refreshContext();
+</script>
 </body>
 </html>
