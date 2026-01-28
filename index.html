@@ -17,6 +17,11 @@
 </head>
 
 <body>
+  
+  <div id="sdkStatus" style="font:12px Segoe UI, Arial; color:#444; background:#f6f6f6; padding:6px 8px; margin:0 0 8px 0; border-radius:6px;">
+    Checking LivePerson SDK…
+  </div>
+
   <h3>BRAVO (PoC) <span class="badge">mock data</span></h3>
 
   <div style="margin: 8px 0;">
@@ -52,6 +57,36 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
   <small>(TODO - Replace stubbed functions with LP Widget SDK to fetch real messages)</small>
 
 <script>
+
+  // =======================================================
+  //  DEBUG
+  // =======================================================
+
+  (function () {
+    const $ = (sel) => document.querySelector(sel);
+    const statusEl = $("#sdkStatus");
+  
+    function readStatus() {
+      if (window.LPWidget) return 'Widgets SDK';
+      if (window.lpTag && window.lpTag.agentSDK) return 'Agent SDK';
+      return 'No SDK detected';
+    }
+  
+    function updateStatus(note) {
+      const mode = readStatus();
+      statusEl.textContent = `[${mode}] ${note || ''}`.trim();
+    }
+  
+    // Initial ping
+    updateStatus('Waiting for injection…');
+    // Update every 500ms for a few seconds so you can see it flip when injected
+    let ticks = 0;
+    const t = setInterval(() => {
+      updateStatus('Waiting for injection…');
+      if (readStatus() !== 'No SDK detected' || ++ticks > 20) clearInterval(t);
+    }, 500);
+  })();
+
   // =======================================================
   //  STUBS — Replace with LivePerson Widget SDK later
   // =======================================================
@@ -119,6 +154,7 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
 </script>
 </body>
 </html>
+
 
 
 
