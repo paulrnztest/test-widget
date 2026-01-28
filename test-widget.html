@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>BRAVO (PoC) — Static Widget</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { font-family: "Segoe UI", system-ui, Arial, sans-serif; }
+    body { margin: 0; padding: 12px; }
+    button { padding: 6px 10px; cursor: pointer; }
+    textarea { width: 100%; box-sizing: border-box; }
+    .row { margin: 10px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    ul { margin: 8px 0 0 18px; }
+    h3 { margin: 0 0 8px 0; }
+    .badge { background: #ececec; padding: 3px 6px; border-radius: 6px; font-size: 11px; }
+  </style>
+</head>
+
+<body>
+  <h3>BRAVO (PoC) <span class="badge">static version</span></h3>
+
+  <div>Conversation: <b id="convId">(loading…)</b></div>
+
+  <div class="row">
+    <button id="btnSummary">Generate summary</button>
+    <button id="btnSuggest">Suggest reply</button>
+    <button id="btnInsert" disabled>Insert into composer</button>
+  </div>
+
+  <div>
+    <h4>Output</h4>
+    <textarea id="output" rows="6" readonly></textarea>
+  </div>
+
+  <div style="margin-top:16px;">
+    <h4>Recent messages (stub)</h4>
+    <ul id="msgs"></ul>
+    <small>
+      TODO: Replace with LP Widget SDK: 
+      <code>getActiveConversationId()</code>, 
+      <code>getMessages()</code>, 
+      <code>setComposerText()</code>.
+    </small>
+  </div>
+
+<script>
+  // -----------------------------------------------------
+  // STUBS — Replace these with the LivePerson Widget SDK
+  // -----------------------------------------------------
+  async function getActiveConversationId() {
+    // Example LP SDK replacement:
+    // return window.LPWidget?.context?.activeConversationId();
+    return "POC-CONV-12345";
+  }
+
+  async function fetchTranscript(id, limit = 30) {
+    // Example LP SDK replacement:
+    // return window.LPWidget.api.getMessages({ conversationId: id, limit });
+    return [
+      { from: "customer", text: "Kia ora, my bill seems high this month." },
+      { from: "agent", text: "I can check that for you." },
+      { from: "customer", text: "I changed plans recently." }
+    ];
+  }
+
+  function insertIntoComposer(text) {
+    // Example LP SDK replacement:
+    // window.LPWidget.api.setComposerText({ conversationId: state.convId, text });
+    alert("Would insert into composer:\n\n" + text);
+  }
+
+  // -----------------------------------------------------
+  // WIDGET LOGIC
+  // -----------------------------------------------------
+  const state = { convId: "", messages: [], output: "" };
+  const $ = (id) => document.querySelector(id);
+
+  function render() {
+    $("#convId").textContent = state.convId || "(none)";
+
+    const list = $("#msgs");
+    list.innerHTML = "";
+    state.messages.forEach(m => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
+      list.appendChild(li);
+    });
+
+    $("#output").value = state.output;
+    $("#btnInsert").disabled = !state.output;
+  }
+
+  function analyzeSummary(msgs) {
+    const lastCust = [...msgs].reverse().find(m => m.from === "customer")?.text || "";
+    return `Summary: ${msgs.length} turns. Last customer message: "${lastCust}". Next step: verify identity and check plan change impact.`;
+  }
+
+  function suggestReply() {
+    return "Thanks for getting in touch. I can help with the higher bill. Can I confirm a couple of details to securely access your account?";
+  }
+
+  $("#btnSummary").addEventListener("click", () => {
+    state.output = analyzeSummary(state.messages);
+    render();
+  });
+
+  $("#btnSuggest").addEventListener("click", () => {
+    state.output = suggestReply(state.messages);
+    render();
+  });
+
+  $("#btnInsert").addEventListener("click", () => insertIntoComposer(state.output));
+
+  // -----------------------------------------------------
+  // BOOTSTRAP — Load conversation + messages
+  // -----------------------------------------------------
+  (async () => {
+    state.convId = await getActiveConversationId();
+    state.messages = await fetchTranscript(state.convId);
+    render();
+  })();
+</script>
+
+</body>
+</html>
