@@ -91,27 +91,79 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
   //  STUBS — Replace with LivePerson Widget SDK later
   // =======================================================
 
+  
+  async function waitForLPsdk(timeoutMs = 8000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (window.LPWidget || (window.lpTag && window.lpTag.agentSDK)) return;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    throw new Error('LivePerson SDK not available in this iframe. Is the widget loaded in Agent Workspace?');
+  }
+  
+  // Unified helpers
   async function getActiveConversationId() {
-    // LP SDK example:
-    return window.LPWidget.context.activeConversationId();
-    // return "POC-CONV-12345";
+    await waitForLPsdk();
+    if (window.LPWidget) {
+      return await window.LPWidget.context.activeConversationId();
+    }
+    if (window.lpTag && window.lpTag.agentSDK) {
+      // Agent SDK flow
+      window.lpTag.agentSDK.init?.({});
+      // Try conversationInfo → get or subscribe once
+      const getOnce = (path) => new Promise(res => {
+        window.lpTag.agentSDK.get(path, d => res(d), () => res(null));
+      });
+      const info = await getOnce('conversationInfo');
+      if (info?.conversationId || info?.conversationID) {
+        return info.conversationId || info.conversationID;
+      }
+      return await new Promise(res => {
+        const handler = (d) => { try { window.lpTag.agentSDK.unsubscribe('conversationInfo', handler); } catch(e){}; res(d?.conversationId || d?.conversationID || ''); };
+        window.lpTag.agentSDK.subscribe('conversationInfo', handler, () => res(''));
+      });
+    }
+    throw new Error('No SDK detected');
+  }
+  
+  async function fetchTranscript(conversationId, limit = 30) {
+    await waitForLPsdk();
+    if (window.LPWidget) {
+      return await window.LPWidget.api.getMessages({ conversationId, limit });
+    }
+    if (window.lpTag && window.lpTag.agentSDK) {
+      window.lpTag.agentSDK.init?.({});
+      const tryPath = async (p) => new Promise(res => {
+        window.lpTag.agentSDK.get(p, d => res(d), () => res(null));
+      });
+      const data = (await tryPath('conversationTranscript.lines')) || (await tryPath('chatTranscript.lines'));
+      if (Array.isArray(data)) {
+        return data.slice(-limit).map(line => ({
+          from: (line.source || line.by || '').toString().toLowerCase().includes('agent') ? 'agent'
+              : (line.source || line.by || '').toString().toLowerCase().includes('bot')   ? 'bot'
+              : 'customer',
+          text: line.text || line.message || ''
+        }));
+      }
+      return [];
+    }
+    return [];
+  }
+  
+  async function insertIntoComposer(text) {
+    await waitForLPsdk();
+    const convId = await getActiveConversationId();
+    if (window.LPWidget) {
+      return window.LPWidget.api.setComposerText({ conversationId: convId, text });
+    }
+    if (window.lpTag && window.lpTag.agentSDK) {
+      window.lpTag.agentSDK.init?.({});
+      const cmd = (name) => new Promise(r => window.lpTag.agentSDK.command(name, { text }, () => r(true), () => r(false)));
+      if (await cmd('SendText')) return;
+      await cmd('Write ChatLine');
+    }
   }
 
-  async function fetchTranscript(convId, limit = 5) {
-    // LP SDK example:
-    // return window.LPWidget.api.getMessages({ conversationId: convId, limit });
-    return [
-      { from: "customer", text: "Hey, my bill is higher this month." },
-      { from: "agent", text: "I can check that for you." },
-      { from: "customer", text: "I changed plans recently." }
-    ];
-  }
-
-  function insertIntoComposer(text) {
-    // LP SDK example:
-    // window.LPWidget.api.setComposerText({ conversationId: convId, text });
-    alert("Would insert into composer:\n\n" + text);
-  }
 
   // =======================================================
   //  SIMPLE STATE + RENDER
@@ -154,6 +206,7 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
 </script>
 </body>
 </html>
+
 
 
 
