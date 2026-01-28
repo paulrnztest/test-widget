@@ -17,8 +17,8 @@
 </head>
 
 <body>
-  
-  <div id="sdkStatus" style="font:12px Segoe UI, Arial; color:#444; background:#f6f6f6; padding:6px 8px; margin:0 0 8px 0; border-radius:6px;">
+  <div id="sdkStatus"
+       style="font:12px Segoe UI, Arial; color:#444; background:#f6f6f6; padding:6px 8px; margin:0 0 8px 0; border-radius:6px;">
     Checking LivePerson SDK…
   </div>
 
@@ -54,160 +54,169 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
   <!-- Latest Messages -->
   <h4>Latest Messages</h4>
   <ul id="msgs"></ul>
-  <small>(TODO - Replace stubbed functions with LP Widget SDK to fetch real messages)</small>
+  <small>(Powered by LivePerson Agent SDK)</small>
+
+
+  <!-- AGENT SDK: Load the required script -->
+  <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 
 <script>
-
-  // =======================================================
-  //  DEBUG
-  // =======================================================
-
-  (function () {
-    const $ = (sel) => document.querySelector(sel);
-    const statusEl = $("#sdkStatus");
-  
-    function readStatus() {
-      if (window.LPWidget) return 'Widgets SDK';
-      if (window.lpTag && window.lpTag.agentSDK) return 'Agent SDK';
-      return 'No SDK detected';
-    }
-  
-    function updateStatus(note) {
-      const mode = readStatus();
-      statusEl.textContent = `[${mode}] ${note || ''}`.trim();
-    }
-  
-    // Initial ping
-    updateStatus('Waiting for injection…');
-    // Update every 500ms for a few seconds so you can see it flip when injected
-    let ticks = 0;
-    const t = setInterval(() => {
-      updateStatus('Waiting for injection…');
-      if (readStatus() !== 'No SDK detected' || ++ticks > 20) clearInterval(t);
-    }, 500);
-  })();
-
-  // =======================================================
-  //  STUBS — Replace with LivePerson Widget SDK later
-  // =======================================================
-
-  
-  async function waitForLPsdk(timeoutMs = 8000) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (window.LPWidget || (window.lpTag && window.lpTag.agentSDK)) return;
-      await new Promise(r => setTimeout(r, 150));
-    }
-    throw new Error('LivePerson SDK not available in this iframe. Is the widget loaded in Agent Workspace?');
-  }
-  
-  // Unified helpers
-  async function getActiveConversationId() {
-    await waitForLPsdk();
-    if (window.LPWidget) {
-      return await window.LPWidget.context.activeConversationId();
-    }
-    if (window.lpTag && window.lpTag.agentSDK) {
-      // Agent SDK flow
-      window.lpTag.agentSDK.init?.({});
-      // Try conversationInfo → get or subscribe once
-      const getOnce = (path) => new Promise(res => {
-        window.lpTag.agentSDK.get(path, d => res(d), () => res(null));
-      });
-      const info = await getOnce('conversationInfo');
-      if (info?.conversationId || info?.conversationID) {
-        return info.conversationId || info.conversationID;
-      }
-      return await new Promise(res => {
-        const handler = (d) => { try { window.lpTag.agentSDK.unsubscribe('conversationInfo', handler); } catch(e){}; res(d?.conversationId || d?.conversationID || ''); };
-        window.lpTag.agentSDK.subscribe('conversationInfo', handler, () => res(''));
-      });
-    }
-    throw new Error('No SDK detected');
-  }
-  
-  async function fetchTranscript(conversationId, limit = 30) {
-    await waitForLPsdk();
-    if (window.LPWidget) {
-      return await window.LPWidget.api.getMessages({ conversationId, limit });
-    }
-    if (window.lpTag && window.lpTag.agentSDK) {
-      window.lpTag.agentSDK.init?.({});
-      const tryPath = async (p) => new Promise(res => {
-        window.lpTag.agentSDK.get(p, d => res(d), () => res(null));
-      });
-      const data = (await tryPath('conversationTranscript.lines')) || (await tryPath('chatTranscript.lines'));
-      if (Array.isArray(data)) {
-        return data.slice(-limit).map(line => ({
-          from: (line.source || line.by || '').toString().toLowerCase().includes('agent') ? 'agent'
-              : (line.source || line.by || '').toString().toLowerCase().includes('bot')   ? 'bot'
-              : 'customer',
-          text: line.text || line.message || ''
-        }));
-      }
-      return [];
-    }
-    return [];
-  }
-  
-  async function insertIntoComposer(text) {
-    await waitForLPsdk();
-    const convId = await getActiveConversationId();
-    if (window.LPWidget) {
-      return window.LPWidget.api.setComposerText({ conversationId: convId, text });
-    }
-    if (window.lpTag && window.lpTag.agentSDK) {
-      window.lpTag.agentSDK.init?.({});
-      const cmd = (name) => new Promise(r => window.lpTag.agentSDK.command(name, { text }, () => r(true), () => r(false)));
-      if (await cmd('SendText')) return;
-      await cmd('Write ChatLine');
-    }
-  }
-
-
-  // =======================================================
-  //  SIMPLE STATE + RENDER
-  // =======================================================
-
-  const state = { convId: "", messages: [] };
+/* =======================================================
+   AGENT SDK STATUS INDICATOR
+   ======================================================= */
+(function () {
   const $ = (sel) => document.querySelector(sel);
+  const statusEl = $("#sdkStatus");
 
-  function render() {
-    // show conversation ID
-    $("#convId").textContent = state.convId || "(none)";
-
-    // latest messages list
-    const msgList = $("#msgs");
-    msgList.innerHTML = "";
-    state.messages.forEach(m => {
-      const li = document.createElement("li");
-      li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
-      msgList.appendChild(li);
-    });
-
-    // suggested reply (placeholder)
-    const replyText = $("#suggestedReply").value.trim();
-    $("#btnInsert").disabled = !replyText;
+  function readStatus() {
+    if (window.lpTag?.agentSDK) return 'Agent SDK';
+    return 'No SDK detected';
   }
 
-  async function refreshContext() {
+  function updateStatus(note) {
+    const mode = readStatus();
+    statusEl.textContent = `[${mode}] ${note || ''}`.trim();
+  }
+
+  // poll to see when the agent SDK loads
+  updateStatus('Waiting for injection…');
+  let ticks = 0;
+  const t = setInterval(() => {
+    updateStatus('Waiting for injection…');
+    if (readStatus() !== 'No SDK detected' || ++ticks > 20) clearInterval(t);
+  }, 500);
+})();
+
+
+/* =======================================================
+   AGENT SDK ONLY — the correct init flow
+   ======================================================= */
+async function waitForAgentSDK(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (window.lpTag?.agentSDK) {
+      return;
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  throw new Error('LivePerson Agent SDK not available in this iframe.');
+}
+
+async function initAgentSDK() {
+  await waitForAgentSDK();
+  try {
+    window.lpTag.agentSDK.init({});
+    console.log("[LP] agentSDK initialised");
+  } catch (e) {
+    console.error("[LP] agentSDK.init failed", e);
+  }
+}
+
+// Kick off init
+initAgentSDK();
+
+
+/* =======================================================
+   AGENT SDK HELPERS
+   ======================================================= */
+
+// 1) Get active conversation ID using bind
+async function getActiveConversationId() {
+  await initAgentSDK();
+  return await new Promise((resolve) => {
+    const cb = (data) => {
+      try { window.lpTag.agentSDK.unbind('conversationInfo', cb); } catch {}
+      const v = data?.newValue || data || {};
+      resolve(v.conversationId || v.conversationID || '');
+    };
+    window.lpTag.agentSDK.bind('conversationInfo', cb, () => resolve(''));
+  });
+}
+
+
+// 2) Fetch transcript (last N lines)
+async function fetchTranscript(convId, limit = 5) {
+  await initAgentSDK();
+
+  const getOnce = (path) => new Promise(res => {
+    window.lpTag.agentSDK.get(path, d => res(d), () => res(null));
+  });
+
+  const data = (await getOnce('conversationTranscript.lines')) ||
+               (await getOnce('chatTranscript.lines')) ||
+               [];
+
+  if (!Array.isArray(data)) return [];
+
+  return data.slice(-limit).map(line => {
+    const by = (line.source || line.by || '').toLowerCase();
+    const from = by.includes('agent') ? 'agent'
+              : by.includes('bot')   ? 'bot'
+              : 'customer';
+    return { from, text: line.text || line.message || '' };
+  });
+}
+
+
+// 3) Insert text into composer
+async function insertIntoComposer(text) {
+  await initAgentSDK();
+
+  const cmd = (name) =>
+    new Promise(r =>
+      window.lpTag.agentSDK.command(
+        name,
+        { text },
+        () => r(true),
+        () => r(false)
+      )
+    );
+
+  if (await cmd('SendText')) return;
+  await cmd('Write ChatLine');
+}
+
+
+/* =======================================================
+   STATE + RENDER
+   ======================================================= */
+
+const state = { convId: "", messages: [] };
+const $ = (sel) => document.querySelector(sel);
+
+function render() {
+  $("#convId").textContent = state.convId || "(none)";
+
+  const msgList = $("#msgs");
+  msgList.innerHTML = "";
+  state.messages.forEach(m => {
+    const li = document.createElement("li");
+    li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
+    msgList.appendChild(li);
+  });
+
+  const replyText = $("#suggestedReply").value.trim();
+  $("#btnInsert").disabled = !replyText;
+}
+
+async function refreshContext() {
+  try {
     state.convId = await getActiveConversationId();
     state.messages = await fetchTranscript(state.convId, 5);
     render();
+  } catch (e) {
+    console.error("refreshContext failed", e);
   }
+}
 
-  $("#btnRefresh").addEventListener("click", refreshContext);
-  $("#btnInsert").addEventListener("click", () => {
-    insertIntoComposer($("#suggestedReply").value);
-  });
+$("#btnRefresh").addEventListener("click", refreshContext);
+$("#btnInsert").addEventListener("click", () => {
+  insertIntoComposer($("#suggestedReply").value);
+});
 
-  // Load immediately
-  refreshContext();
+// Load immediately
+refreshContext();
 </script>
+
 </body>
 </html>
-
-
-
-
-
