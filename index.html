@@ -2,60 +2,68 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>BRAVO (PoC) — Static Widget</title>
+  <title>BRAVO (PoC) — Agent Assist Widget</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { font-family: "Segoe UI", system-ui, Arial, sans-serif; }
     body { margin: 0; padding: 12px; }
     button { padding: 6px 10px; cursor: pointer; }
     textarea { width: 100%; box-sizing: border-box; }
-    .row { margin: 10px 0; display: flex; gap: 8px; flex-wrap: wrap; }
-    ul { margin: 8px 0 0 18px; }
-    h3 { margin: 0 0 8px 0; }
-    .badge { background: #ececec; padding: 3px 6px; border-radius: 6px; font-size: 11px; }
+    h3 { margin: 0 0 6px 0; }
+    .row { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+    ul { margin: 6px 0 0 18px; }
+    .badge { background: #e8e8e8; padding: 3px 6px; border-radius: 6px; font-size: 11px; }
   </style>
 </head>
 
 <body>
-  <h3>BRAVO (PoC) <span class="badge">static version</span></h3>
-
-  <div>Conversation: <b id="convId">(loading…)</b></div>
+  <h3>BRAVO (PoC) <span class="badge">static</span></h3>
 
   <div class="row">
-    <button id="btnSummary">Generate summary</button>
-    <button id="btnSuggest">Suggest reply</button>
-    <button id="btnInsert" disabled>Insert into composer</button>
+    Conversation: <b id="convId">(loading…)</b>
   </div>
 
-  <div>
-    <h4>Output</h4>
-    <textarea id="output" rows="6" readonly></textarea>
+  <div class="row">
+    <button id="btnRefresh">Refresh Context</button>
+    <button id="btnInsert" disabled>Insert Suggested Reply</button>
   </div>
 
-  <div style="margin-top:16px;">
-    <h4>Recent messages (stub)</h4>
+  <div style="margin-top: 16px;">
+    <h4>Relevant Information</h4>
+    <ul id="relevantInfo"></ul>
+
+    <h4>Suggested Next Steps</h4>
+    <ul id="nextSteps"></ul>
+
+    <h4>Suggested Reply</h4>
+    <textarea id="suggestedReply" rows="4" readonly></textarea>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <h4>Recent Messages</h4>
     <ul id="msgs"></ul>
     <small>
-      TODO: Replace with LP Widget SDK: 
-      <code>getActiveConversationId()</code>, 
-      <code>getMessages()</code>, 
-      <code>setComposerText()</code>.
+      (Replace stub functions with LP Widget SDK:  
+      <code>context.activeConversationId()</code>,  
+      <code>api.getMessages()</code>,  
+      <code>api.setComposerText()</code>)
     </small>
   </div>
 
 <script>
-  // -----------------------------------------------------
-  // STUBS — Replace these with the LivePerson Widget SDK
-  // -----------------------------------------------------
+  // =======================================================
+  //  STUBS — Replace with LivePerson Widget SDK
+  // =======================================================
+
   async function getActiveConversationId() {
-    // Example LP SDK replacement:
-    // return window.LPWidget?.context?.activeConversationId();
+    // Example LP SDK:
+    // return await window.LPWidget.context.activeConversationId();
     return "POC-CONV-12345";
   }
 
   async function fetchTranscript(id, limit = 30) {
-    // Example LP SDK replacement:
-    // return window.LPWidget.api.getMessages({ conversationId: id, limit });
+    // Example LP SDK:
+    // return await window.LPWidget.api.getMessages({ conversationId: id, limit });
     return [
       { from: "customer", text: "Kia ora, my bill seems high this month." },
       { from: "agent", text: "I can check that for you." },
@@ -64,35 +72,83 @@
   }
 
   function insertIntoComposer(text) {
-    // Example LP SDK replacement:
+    // LP SDK:
     // window.LPWidget.api.setComposerText({ conversationId: state.convId, text });
     alert("Would insert into composer:\n\n" + text);
   }
 
-  // -----------------------------------------------------
-  // WIDGET LOGIC
-  // -----------------------------------------------------
-  const state = { convId: "", messages: [], output: "" };
-  const $ = (id) => document.querySelector(id);
+  // =======================================================
+  //  ANALYSIS LOGIC (Relevant Info / Next Steps / Reply)
+  // =======================================================
+
+  function extractRelevantInformation(messages) {
+    const info = [];
+    const lastCust = [...messages].reverse().find(m => m.from === "customer");
+
+    if (lastCust) info.push(`Last customer message: "${lastCust.text}"`);
+
+    if (messages.some(m => m.text.toLowerCase().includes("bill")))
+      info.push("Billing concern detected.");
+
+    if (messages.some(m => m.text.toLowerCase().includes("plan")))
+      info.push("Customer mentioned a plan change.");
+
+    return info;
+  }
+
+  function suggestNextSteps(messages) {
+    const steps = [];
+
+    if (messages.some(m => m.text.toLowerCase().includes("bill"))) {
+      steps.push("Verify the customer’s identity.");
+      steps.push("Check the last 2–3 bills for changes.");
+      steps.push("Review plan / promotions applied recently.");
+    }
+
+    if (messages.some(m => m.text.toLowerCase().includes("plan"))) {
+      steps.push("Confirm the customer’s current plan.");
+      steps.push("Check the date of the last plan change.");
+    }
+
+    if (steps.length === 0)
+      steps.push("Clarify the customer's query and gather details.");
+
+    return steps;
+  }
+
+  function generateSuggestedReply(messages) {
+    const lastCust = [...messages].reverse().find(m => m.from === "customer");
+    const issue = lastCust?.text || "that";
+
+    return `Thanks for getting in touch. I can help with ${issue}. 
+Before I take a closer look, can I confirm a couple of details so I can securely access your account?`;
+  }
+
+  // =======================================================
+  //  STATE + RENDER
+  // =======================================================
+
+  const state = { convId: "", messages: [] };
+  const $ = (sel) => document.querySelector(sel);
 
   function render() {
     $("#convId").textContent = state.convId || "(none)";
-    
-    // Messages list
-    const list = $("#msgs");
-    list.innerHTML = "";
+
+    // Messages
+    const msgList = $("#msgs");
+    msgList.innerHTML = "";
     state.messages.forEach(m => {
       const li = document.createElement("li");
       li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
-      list.appendChild(li);
+      msgList.appendChild(li);
     });
-  
+
     // Compute outputs
     const info = extractRelevantInformation(state.messages);
     const steps = suggestNextSteps(state.messages);
     const reply = generateSuggestedReply(state.messages);
-  
-    // Populate relevant information
+
+    // Relevant Info
     const ri = $("#relevantInfo");
     ri.innerHTML = "";
     info.forEach(i => {
@@ -100,8 +156,8 @@
       li.textContent = i;
       ri.appendChild(li);
     });
-  
-    // Populate next steps
+
+    // Next Steps
     const ns = $("#nextSteps");
     ns.innerHTML = "";
     steps.forEach(s => {
@@ -109,46 +165,26 @@
       li.textContent = s;
       ns.appendChild(li);
     });
-  
-    // Suggested reply
+
+    // Suggested Reply
     $("#suggestedReply").value = reply;
-  
-    // Enable composer insert button
     $("#btnInsert").disabled = !reply;
   }
 
-  function analyzeSummary(msgs) {
-    const lastCust = [...msgs].reverse().find(m => m.from === "customer")?.text || "";
-    return `Summary: ${msgs.length} turns. Last customer message: "${lastCust}". Next step: verify identity and check plan change impact.`;
-  }
-
-  function suggestReply() {
-    return "Thanks for getting in touch. I can help with the higher bill. Can I confirm a couple of details to securely access your account?";
-  }
-
-  $("#btnSummary").addEventListener("click", () => {
-    state.output = analyzeSummary(state.messages);
-    render();
-  });
-
-  $("#btnSuggest").addEventListener("click", () => {
-    state.output = suggestReply(state.messages);
-    render();
-  });
-
-  $("#btnInsert").addEventListener("click", () => insertIntoComposer(state.output));
-
-  // -----------------------------------------------------
-  // BOOTSTRAP — Load conversation + messages
-  // -----------------------------------------------------
-  (async () => {
+  async function refreshContext() {
     state.convId = await getActiveConversationId();
-    state.messages = await fetchTranscript(state.convId);
+    state.messages = await fetchTranscript(state.convId, 30);
     render();
-  })();
+  }
+
+  $("#btnRefresh").addEventListener("click", refreshContext);
+  $("#btnInsert").addEventListener("click", () => {
+    insertIntoComposer($("#suggestedReply").value);
+  });
+
+  // Load on startup
+  refreshContext();
+
 </script>
-
 </body>
-
 </html>
-
