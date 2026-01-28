@@ -58,8 +58,8 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
 
   async function getActiveConversationId() {
     // LP SDK example:
-    // return window.LPWidget.context.activeConversationId();
-    return "POC-CONV-12345";
+    return window.LPWidget.context.activeConversationId();
+    // return "POC-CONV-12345";
   }
 
   async function fetchTranscript(convId, limit = 5) {
@@ -119,5 +119,6 @@ Thanks for letting me know you’ve changed plans – that’s really helpful. W
 </script>
 </body>
 </html>
+
 
 
