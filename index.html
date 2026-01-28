@@ -115,6 +115,26 @@ async function initAgentSDK() {
 // Kick off init
 initAgentSDK();
 
+  
+  // Log whether the model publishes any values to common paths
+  function logOnce(path, label = path) {
+    try {
+      window.lpTag.agentSDK.bind(path, (d) => {
+        console.log(label + ':', d);
+        try { window.lpTag.agentSDK.unbind(path, arguments.callee); } catch {}
+      }, () => {});
+    } catch (e) {
+      console.warn('bind failed for', path, e);
+    }
+  }
+
+  // Most useful paths to probe
+  logOnce('conversationInfo', 'conversationInfo');
+  logOnce('conversationTranscript.lines', 'conversationTranscript.lines');
+  logOnce('chatTranscript.lines', 'chatTranscript.lines');
+  logOnce('visitorInfo', 'visitorInfo');
+
+
 
 /* =======================================================
    AGENT SDK HELPERS
@@ -220,3 +240,4 @@ refreshContext();
 
 </body>
 </html>
+
