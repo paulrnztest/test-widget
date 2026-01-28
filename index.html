@@ -77,7 +77,8 @@
 
   function render() {
     $("#convId").textContent = state.convId || "(none)";
-
+    
+    // Messages list
     const list = $("#msgs");
     list.innerHTML = "";
     state.messages.forEach(m => {
@@ -85,9 +86,35 @@
       li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
       list.appendChild(li);
     });
-
-    $("#output").value = state.output;
-    $("#btnInsert").disabled = !state.output;
+  
+    // Compute outputs
+    const info = extractRelevantInformation(state.messages);
+    const steps = suggestNextSteps(state.messages);
+    const reply = generateSuggestedReply(state.messages);
+  
+    // Populate relevant information
+    const ri = $("#relevantInfo");
+    ri.innerHTML = "";
+    info.forEach(i => {
+      const li = document.createElement("li");
+      li.textContent = i;
+      ri.appendChild(li);
+    });
+  
+    // Populate next steps
+    const ns = $("#nextSteps");
+    ns.innerHTML = "";
+    steps.forEach(s => {
+      const li = document.createElement("li");
+      li.textContent = s;
+      ns.appendChild(li);
+    });
+  
+    // Suggested reply
+    $("#suggestedReply").value = reply;
+  
+    // Enable composer insert button
+    $("#btnInsert").disabled = !reply;
   }
 
   function analyzeSummary(msgs) {
@@ -124,3 +151,4 @@
 </body>
 
 </html>
+
