@@ -2,48 +2,51 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>LivePerson Debug Widget</title>
-  <!-- Load the LivePerson Web Agent SDK -->
+  <title>Debug Widget v1.0.0</title> <!-- Version only in title -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 </head>
 <body>
-  <h1>Debug Widget 0.1</h1>
-  <p>Open your console to see logs.</p>
+  <p>Open the console to see logs.</p>
 
   <script>
-    console.log("Debug Widget Starting...");
+    async function waitForAgentSDK(timeout = 5000) {
+      const start = Date.now();
+      while (!window.lpTag?.agentSDK) {
+        if (Date.now() - start > timeout) throw new Error("lpTag.agentSDK did not load in time");
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return window.lpTag.agentSDK;
+    }
 
-    // --- 1️⃣ Initialize Agent SDK ---
-    const siteId = "54523770"; // <-- replace with your LivePerson site ID
+    async function initAgentSDK() {
+      try {
+        const agentSDK = await waitForAgentSDK();
+        agentSDK.init({});
+        console.log("[LP] agentSDK initialized");
 
-    lpTag.agentSDK.init({ siteId })
-      .then(() => {
-        console.log("Agent SDK initialized successfully!");
-
-        // --- 2️⃣ Function to fetch current conversation ID ---
-        function printConversationId() {
-          const context = lpTag.agentSDK.getContextData?.(); // safe call
-          if (context && context.CONVERSATION && context.CONVERSATION.ID) {
+        // Log current conversation ID
+        function printConversationId(context) {
+          if (context?.CONVERSATION?.ID) {
             console.log("Active Conversation ID:", context.CONVERSATION.ID);
           } else {
-            console.warn("No active conversation yet.");
+            console.warn("No active conversation.");
           }
         }
 
-        // --- 3️⃣ Fetch once immediately ---
-        printConversationId();
+        // Subscribe to conversation changes in real-time
+        agentSDK.subscribe('CONVERSATION', (event) => {
+          printConversationId(event);
+        });
 
-        // --- 4️⃣ Refresh periodically (every 5 seconds) ---
-        setInterval(() => {
-          printConversationId();
-        }, 5000);
+        // Print current conversation immediately if it exists
+        printConversationId(agentSDK.getContextData?.());
 
-      })
-      .catch(err => {
-        console.error("Failed to initialize Agent SDK:", err);
-      });
+      } catch (e) {
+        console.error("[LP] agentSDK.init failed", e);
+      }
+    }
+
+    initAgentSDK();
   </script>
 </body>
 </html>
-
-
