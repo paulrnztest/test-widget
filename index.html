@@ -241,7 +241,7 @@ function render() {
 
   if (hasConversation) {
     state.messages
-      .filter(m => m.from === "customer")
+      .filter(m => m.from === "consumer")
       .forEach(m => {
         msgBox.textContent += `🧑 ${m.text}\n`;
       });
@@ -306,5 +306,6 @@ render();
 
 </body>
 </html>
+
 
 
