@@ -6,8 +6,8 @@
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 </head>
 <body>
-  <h1>Debug Widget v1.0.2</h1> <!-- Version displayed on the page -->
-  <p>Open the console to see logs for the conversation ID.</p>
+  <h1>Debug Widget v1.0.3</h1>
+  <p>Open the console to see logs for debugging.</p>
 
   <script>
     async function waitForAgentSDK(timeout = 5000) {
@@ -25,10 +25,21 @@
         agentSDK.init({});
         console.log("[LP] agentSDK initialized");
 
+        // --- Debugging information ---
+        console.log("Full agentSDK object:", agentSDK);
+        console.log("lpTag config:", window.lpTag?.config);
+        console.log("Window location:", window.location.href);
+
         // Poll for conversation ID every 5 seconds
         setInterval(() => {
-          const context = agentSDK.getContextData?.();
-          console.log("Full agentSDK context:", agentSDK.getContextData?.());
+          if (!agentSDK.getContextData) {
+            console.warn("[Debug] agentSDK.getContextData is undefined!");
+            return;
+          }
+
+          const context = agentSDK.getContextData();
+          console.log("Full context object:", context);
+
           if (context?.CONVERSATION?.ID) {
             console.log("Active Conversation ID:", context.CONVERSATION.ID);
           } else {
@@ -36,12 +47,12 @@
           }
         }, 5000);
 
-        // Also print once immediately
-        const context = agentSDK.getContextData?.();
-        if (context?.CONVERSATION?.ID) {
-          console.log("Active Conversation ID:", context.CONVERSATION.ID);
+        // Initial check immediately
+        if (agentSDK.getContextData) {
+          const context = agentSDK.getContextData();
+          console.log("Initial full context:", context);
         } else {
-          console.warn("No active conversation");
+          console.warn("[Debug] agentSDK.getContextData is undefined on init!");
         }
 
       } catch (e) {
@@ -53,4 +64,3 @@
   </script>
 </body>
 </html>
-
