@@ -179,7 +179,7 @@ async function fetchTranscriptSlice(limit = 8) {
   return lines.slice(-limit).map(line => {
     const s = (line.source || line.by || "").toLowerCase();
     return {
-      from: s.includes("customer") ? "customer" : "agent",
+      from: s.includes("consumer") ? "consumer" : "agent",
       text: line.text || line.message || ""
     };
   });
@@ -306,4 +306,5 @@ render();
 
 </body>
 </html>
+
 
