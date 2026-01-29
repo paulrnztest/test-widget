@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Debug Widget v1.0.0</title> <!-- Version only in title -->
+  <title>Debug Widget</title>
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 </head>
 <body>
-  <p>Open the console to see logs.</p>
+  <h1>Debug Widget v1.0.0</h1> <!-- Version displayed here -->
+  <p>Open the console to see logs for the conversation ID.</p>
 
   <script>
     async function waitForAgentSDK(timeout = 5000) {
@@ -33,7 +34,7 @@
           }
         }
 
-        // Subscribe to conversation changes in real-time
+        // Subscribe to conversation changes
         agentSDK.subscribe('CONVERSATION', (event) => {
           printConversationId(event);
         });
