@@ -181,17 +181,26 @@ async function fetchTranscriptSlice(limit = 8) {
     ? lines.slice(-limit).map(line => {
         const s = (line.source || line.by || "").toLowerCase();
 
-        const from =
-          s.includes("agent") ? "agent"
-          : s.includes("bot") ? "bot"
-          : "customer";
+        // Explicit role detection
+        const isCustomer =
+          s.includes("consumer") ||
+          s.includes("visitor") ||
+          s.includes("customer");
+
+        const isAgent = s.includes("agent");
+        const isBot = s.includes("bot");
+
+        // Ignore system / controller / manager messages
+        if (!isCustomer && !isAgent && !isBot) {
+          return null;
+        }
 
         return {
-          from,
+          from: isCustomer ? "customer" : isBot ? "bot" : "agent",
           text: line.text || line.message || "",
           dialogId: line.dialogId || ""
         };
-      })
+      }).filter(Boolean) // remove null (system) lines
     : [];
 }
 
@@ -316,6 +325,7 @@ render();
 
 </body>
 </html>
+
 
 
 
