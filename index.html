@@ -176,13 +176,23 @@ async function getConversationIdFromTranscript() {
 async function fetchTranscriptSlice(limit = 8) {
   const payload = await bindOnce("chatTranscript.lines");
   const lines = payload?.newValue || [];
-  return lines.slice(-limit).map(line => {
-    const s = (line.source || line.by || "").toLowerCase();
-    return {
-      from: s.includes("consumer") ? "consumer" : "agent",
-      text: line.text || line.message || ""
-    };
-  });
+
+  return Array.isArray(lines)
+    ? lines.slice(-limit).map(line => {
+        const s = (line.source || line.by || "").toLowerCase();
+
+        const from =
+          s.includes("agent") ? "agent"
+          : s.includes("bot") ? "bot"
+          : "customer";
+
+        return {
+          from,
+          text: line.text || line.message || "",
+          dialogId: line.dialogId || ""
+        };
+      })
+    : [];
 }
 
 /* -------------------------------------------------------
@@ -241,7 +251,7 @@ function render() {
 
   if (hasConversation) {
     state.messages
-      .filter(m => m.from === "consumer")
+      .filter(m => m.from === "customer")
       .forEach(m => {
         msgBox.textContent += `🧑 ${m.text}\n`;
       });
@@ -306,6 +316,7 @@ render();
 
 </body>
 </html>
+
 
 
 
