@@ -2,74 +2,223 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>LP Debug Widget (Simple)</title>
+  <title>BRAVO (PoC) — Placeholder Version</title>
+
   <!-- Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
+
   <style>
-    body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
-    #log { white-space: pre-wrap; border:1px solid #ddd; padding:8px; background:#fafafa; max-height:260px; overflow:auto; }
-    .muted { color:#666 }
+    body {
+      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin:16px;
+    }
+    h3 { margin: 0 0 8px 0; }
+    h4 { margin-top: 16px; }
+    ul { margin: 6px 0 0 18px; }
+    button { padding: 6px 10px; cursor:pointer; }
+    textarea { width:100%; box-sizing:border-box; }
+    #log, #msgs {
+      white-space: pre-wrap;
+      border:1px solid #ddd;
+      padding:8px;
+      background:#fafafa;
+      max-height:220px;
+      overflow:auto;
+      margin-top:6px;
+    }
+    .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
+    #sdkStatus { font-size:12px; margin-bottom:8px; padding:6px; background:#f6f6f6; border-radius:6px; }
   </style>
 </head>
+
 <body>
-  <h1>LP Debug Widget 1.0.7</h1>
-  <div class="muted">Accept/open a conversation, then watch the log.</div>
-  <div id="log"></div>
 
-  <script>
-    // --- tiny logger ---
-    const $log = document.getElementById('log');
-    function out(level, ...a) {
-      (console[level] || console.log)(...a);
-      $log.textContent += a.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(' ') + '\n';
-      $log.scrollTop = $log.scrollHeight;
-    }
-    const log  = (...a) => out('log',  '[LP-DEBUG]', ...a);
-    const warn = (...a) => out('warn', '[LP-DEBUG]', ...a);
-    const err  = (...a) => out('error','[LP-DEBUG]', ...a);
+  <!-- SDK status header -->
+  <div id="sdkStatus">Checking LivePerson SDK…</div>
 
-    // Wait for lpTag.agentSDK
-    function waitForAgentSDK(ms = 8000) {
-      return new Promise((res, rej) => {
-        const t0 = Date.now();
-        (function poll() {
-          if (window.lpTag && window.lpTag.agentSDK) return res(window.lpTag.agentSDK);
-          if (Date.now() - t0 > ms) return rej(new Error('lpTag.agentSDK not found'));
-          setTimeout(poll, 100);
-        })();
-      });
-    }
+  <h3>BRAVO (PoC) <span class="badge">placeholder</span></h3>
 
-    (async function main() {
-      try {
-        const agentSDK = await waitForAgentSDK();
-        agentSDK.init({});
-        log('agentSDK.init() called');
+  <div style="margin: 8px 0;">
+    Conversation: <b id="convId">(loading…)</b>
+  </div>
 
-        // Print the conversation ID once, using dialogId from transcript lines
-        let printedConvId = false;
+  <div style="margin:10px 0;">
+    <button id="btnRefresh">Refresh Context</button>
+    <button id="btnInsert" disabled>Insert Suggested Reply</button>
+  </div>
 
-        agentSDK.bind('chatTranscript.lines', (data) => {
-          const lines = (data && data.newValue) || [];
-          if (!lines.length) return;
+  <!-- Placeholder Panels -->
+  <h4>Relevant Information</h4>
+  <ul id="relevantInfo">
+    <li>A higher bill after a recent plan change is often due to a <b>transition bill</b> where customers can see pro‑rated charges from the old plan and new plan on the same bill.</li>
+    <li>A <b>Bill Estimator</b> tool is available internally to help estimate charges when customers change broadband plans.</li>
+  </ul>
 
-          const latest = lines[lines.length - 1];
-          log('Transcript line (latest):', latest);
+  <h4>Suggested Next Steps</h4>
+  <ul id="nextSteps">
+    <li>Check in Spark CRM what plan the customer was on, what plan they moved to, and the <b>effective date of the change.</b></li>
+    <li>Compare the last bill and the current bill to identify <b>pro‑rated old plan charges/credits</b> and the <b>new plan charges</b>.</li>
+  </ul>
 
-          if (!printedConvId && latest && latest.dialogId) {
-            printedConvId = true;
-            log('Conversation ID:', latest.dialogId, '(via transcript.dialogId)');
+  <h4>Suggested Reply</h4>
+  <textarea id="suggestedReply" rows="4" readonly>
+Thanks for letting me know you’ve changed plans – that’s really helpful. 
+When a plan changes, the first bill afterwards can look higher because it can include part of your old plan, 
+part of your new plan, and any credits or adjustments for the changeover. 
+I’ll pull up your last bill and this month’s bill now and break down exactly what’s different 
+so you can see what’s one‑off for the change and what your regular monthly cost will be going forward.
+  </textarea>
 
-            // Optional: stop listening once we have the ID
-            try { agentSDK.unbind('chatTranscript.lines'); } catch (e) {}
-          }
-        }, (e) => { if (e) warn('bind error on chatTranscript.lines', e); });
+  <!-- Latest Messages -->
+  <h4>Latest Messages</h4>
+  <div id="msgs"></div>
 
-      } catch (e) {
-        err('Initialization failed:', e);
-      }
-    })();
-  </script>
+<script>
+/* -------------------------------------------------------
+   STATUS INDICATOR
+------------------------------------------------------- */
+(function () {
+  const statusEl = document.getElementById("sdkStatus");
+
+  function readStatus() {
+    return window.lpTag?.agentSDK ? "Agent SDK" : "No SDK detected";
+  }
+
+  function updateStatus(note) {
+    const mode = readStatus();
+    statusEl.textContent = `[${mode}] ${note || ""}`.trim();
+  }
+
+  updateStatus("Waiting for injection…");
+
+  let ticks = 0;
+  const t = setInterval(() => {
+    updateStatus("Waiting for injection…");
+    if (readStatus() !== "No SDK detected" || ++ticks > 20) clearInterval(t);
+  }, 500);
+})();
+
+/* -------------------------------------------------------
+   AGENT SDK INIT
+------------------------------------------------------- */
+async function waitForAgentSDK(ms = 8000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (window.lpTag?.agentSDK) return;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  throw new Error("Agent SDK not found in iframe.");
+}
+
+async function initAgentSDK() {
+  await waitForAgentSDK();
+  window.lpTag.agentSDK.init({});
+  console.log("[LP] agentSDK.initialised");
+}
+
+initAgentSDK();
+
+/* -------------------------------------------------------
+   HELPERS — conversationId + transcript + composer
+------------------------------------------------------- */
+
+// 1) Get conversationId via conversationInfo
+async function getActiveConversationId() {
+  await initAgentSDK();
+  return await new Promise(resolve => {
+    const cb = (d) => {
+      try { window.lpTag.agentSDK.unbind("conversationInfo", cb); } catch {}
+      const v = d?.newValue || d || {};
+      resolve(v.conversationId || v.conversationID || "");
+    };
+    window.lpTag.agentSDK.bind("conversationInfo", cb, () => resolve(""));
+  });
+}
+
+// 2) fetch transcript lines (chatTranscript.lines)
+async function fetchTranscript(convId, limit = 10) {
+  await initAgentSDK();
+
+  const getOnce = (path) =>
+    new Promise(res =>
+      window.lpTag.agentSDK.get(path, d => res(d), () => res(null))
+    );
+
+  const data =
+    (await getOnce("conversationTranscript.lines")) ||
+    (await getOnce("chatTranscript.lines")) ||
+    [];
+
+  if (!Array.isArray(data)) return [];
+
+  return data.slice(-limit).map(line => {
+    const source = (line.source || line.by || "").toLowerCase();
+    const from = source.includes("agent")
+      ? "agent"
+      : source.includes("bot")
+      ? "bot"
+      : "customer";
+
+    return {
+      from,
+      text: line.text || line.message || "",
+      dialogId: line.dialogId || ""
+    };
+  });
+}
+
+// 3) Insert text into composer
+async function insertIntoComposer(text) {
+  await initAgentSDK();
+
+  const cmd = (name) =>
+    new Promise(r =>
+      window.lpTag.agentSDK.command(name, { text }, () => r(true), () => r(false))
+    );
+
+  if (await cmd("SendText")) return;
+  await cmd("Write ChatLine");
+}
+
+/* -------------------------------------------------------
+   STATE + RENDER
+------------------------------------------------------- */
+
+const state = { convId: "", messages: [] };
+const $ = (sel) => document.querySelector(sel);
+
+function render() {
+  $("#convId").textContent = state.convId || "(none)";
+
+  const msgBox = $("#msgs");
+  msgBox.innerHTML = "";
+
+  state.messages.forEach(m => {
+    msgBox.innerHTML += `<b>${m.from}:</b> ${m.text}\n`;
+  });
+
+  $("#btnInsert").disabled = !$("#suggestedReply").value.trim();
+}
+
+async function refreshContext() {
+  try {
+    state.convId = await getActiveConversationId();
+    state.messages = await fetchTranscript(state.convId, 10);
+    render();
+  } catch (e) {
+    console.error("refreshContext failed:", e);
+  }
+}
+
+// Button wiring
+$("#btnRefresh").addEventListener("click", refreshContext);
+$("#btnInsert").addEventListener("click", () =>
+  insertIntoComposer($("#suggestedReply").value)
+);
+
+// Load immediately
+refreshContext();
+</script>
+
 </body>
 </html>
-
