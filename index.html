@@ -2,82 +2,142 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>BRAVO (PoC) — Placeholder Version</title>
+  <title>BRAVO — Agent Assist (PoC)</title>
 
   <!-- LivePerson Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 
   <style>
-    body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
-    h3 { margin: 0 0 8px 0; }
+    body {
+      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin:16px;
+    }
+
+    h3 { margin: 0 0 4px 0; }
     h4 { margin-top: 16px; }
     ul { margin: 6px 0 0 18px; }
-    button { padding: 6px 10px; cursor:pointer; }
-    textarea { width:100%; box-sizing:border-box; }
-    .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
-    #sdkStatus { font-size:12px; margin-bottom:8px; padding:6px; background:#f6f6f6; border-radius:6px; }
+
+    button {
+      padding: 6px 10px;
+      cursor:pointer;
+    }
+
+    textarea {
+      width:100%;
+      box-sizing:border-box;
+      resize: vertical;
+    }
+
+    .badge {
+      background:#e8e8e8;
+      padding:3px 6px;
+      border-radius:6px;
+      font-size:11px;
+    }
+
+    #sdkStatus {
+      font-size:12px;
+      margin-bottom:8px;
+      padding:6px;
+      background:#f6f6f6;
+      border-radius:6px;
+    }
+
     #msgs {
       white-space: pre-wrap;
       border:1px solid #ddd;
       padding:8px;
       background:#fafafa;
-      max-height:220px;
+      max-height:180px;
       overflow:auto;
       margin-top:6px;
+      font-size:13px;
+    }
+
+    /* Assist / BRAVO styling */
+    .assist {
+      background:#f7f9fc;
+      padding:10px;
+      border-left:3px solid #6b8cff;
+      margin-top:14px;
+    }
+
+    .muted {
+      color:#666;
+      font-size:12px;
     }
   </style>
 </head>
 
 <body>
 
-  <!-- SDK status header -->
+  <!-- SDK status -->
   <div id="sdkStatus">Checking LivePerson SDK…</div>
 
-  <h3>BRAVO (PoC) <span class="badge">0.0.8</span></h3>
+  <h3>BRAVO — Agent Assist <span class="badge">preview</span></h3>
+  <div class="muted">
+    Real‑time guidance based on the current conversation. Review before sending — you’re always in control.
+  </div>
 
   <div style="margin: 8px 0;">
     Conversation: <b id="convId">(loading…)</b>
   </div>
 
   <div style="margin:10px 0;">
-    <button id="btnRefresh">Refresh Context</button>
-    <button id="btnInsert" disabled>Insert Suggested Reply</button>
+    <button id="btnRefresh">🔄 Refresh suggestions</button>
+    <button id="btnInsert" disabled>Insert suggested reply</button>
   </div>
 
-  <!-- Placeholder Panels (from your earlier version) -->
-  <h4>Relevant Information</h4>
-  <ul id="relevantInfo">
-    <li>A higher bill after a recent plan change is often due to a <b>transition bill</b> where customers can see pro‑rated charges from the old plan and new plan on the same bill.</li>
-    <li>A <b>Bill Estimator</b> tool is available internally to help estimate charges when customers change broadband plans.</li>
-  </ul>
+  <!-- ASSIST CONTENT -->
+  <div class="assist">
+    <h4>Things to keep in mind</h4>
+    <ul>
+      <li>
+        A higher bill after a recent plan change is often due to a
+        <b>transition bill</b>, where customers can see pro‑rated charges from
+        both the old plan and the new plan on the same bill.
+      </li>
+      <li>
+        A <b>Bill Estimator</b> tool is available internally to help estimate
+        charges when customers change broadband plans.
+      </li>
+    </ul>
 
-  <h4>Suggested Next Steps</h4>
-  <ul id="nextSteps">
-    <li>Check in Spark CRM what plan the customer was on, what plan they moved to, and the <b>effective date of the change.</b></li>
-    <li>Compare the last bill and the current bill to identify <b>pro‑rated old plan charges/credits</b> and the <b>new plan charges</b>.</li>
-  </ul>
+    <h4>What to check next</h4>
+    <ul>
+      <li>
+        Check in Spark CRM what plan the customer was on, what plan they moved
+        to, and the <b>effective date of the change</b>.
+      </li>
+      <li>
+        Compare the last bill and the current bill to identify
+        <b>pro‑rated old plan charges / credits</b> and the
+        <b>new plan charges</b>.
+      </li>
+    </ul>
 
-  <h4>Suggested Reply</h4>
-  <textarea id="suggestedReply" rows="4" readonly>
-Thanks for letting me know you’ve changed plans – that’s really helpful. 
-When a plan changes, the first bill afterwards can look higher because it can include part of your old plan, 
-part of your new plan, and any credits or adjustments for the changeover. 
-I’ll pull up your last bill and this month’s bill now and break down exactly what’s different 
-so you can see what’s one‑off for the change and what your regular monthly cost will be going forward.
-  </textarea>
+    <h4>Suggested reply <span class="muted">(editable)</span></h4>
+    <textarea id="suggestedReply" rows="4" readonly>
+Thanks for letting me know you’ve changed plans – that’s really helpful.
+When a plan changes, the first bill afterwards can look higher because it can include part of your old plan, part of your new plan, and any credits or adjustments for the changeover.
+I’ll pull up your last bill and this month’s bill now and break down exactly what’s different so you can see what’s one‑off for the change and what your regular monthly cost will be going forward.
+    </textarea>
+  </div>
 
-  <!-- Latest Messages -->
-  <h4>Latest Messages</h4>
+  <!-- Conversation context -->
+  <h4>Latest customer messages</h4>
   <div id="msgs"></div>
 
 <script>
 /* -------------------------------------------------------
-   Status indicator
+   SDK status indicator
 ------------------------------------------------------- */
 (function () {
   const statusEl = document.getElementById("sdkStatus");
   const mode = () => (window.lpTag?.agentSDK ? "Agent SDK" : "No SDK detected");
-  const update = (note) => statusEl.textContent = `[${mode()}] ${note || ""}`.trim();
+  const update = (note) =>
+    statusEl.textContent = `[${mode()}] ${note || ""}`.trim();
+
   update("Waiting for injection…");
   let tries = 0;
   const t = setInterval(() => {
@@ -87,7 +147,7 @@ so you can see what’s one‑off for the change and what your regular monthly c
 })();
 
 /* -------------------------------------------------------
-   Agent SDK initialisation
+   Agent SDK init
 ------------------------------------------------------- */
 async function waitForAgentSDK(ms = 8000) {
   const t0 = Date.now();
@@ -108,13 +168,8 @@ async function ensureAgentSDK() {
 }
 
 /* -------------------------------------------------------
-   Helpers (manual refresh path)
-   - We bind once just to capture a snapshot then unbind
-   - For your tenant, we use chatTranscript.lines + latest.dialogId
-   - This mirrors your working debug widget’s approach
+   One‑shot bind helper
 ------------------------------------------------------- */
-
-// one-shot bind: resolve with first payload then unbind
 function bindOnce(path) {
   return new Promise((resolve) => {
     const cb = (data) => {
@@ -125,37 +180,55 @@ function bindOnce(path) {
   });
 }
 
+/* -------------------------------------------------------
+   Context helpers (manual refresh)
+------------------------------------------------------- */
 async function getConversationIdFromTranscript() {
   const payload = await bindOnce("chatTranscript.lines");
   const lines = payload?.newValue || [];
-  const latest = Array.isArray(lines) && lines.length ? lines[lines.length - 1] : null;
-  return latest?.dialogId || "";  // this is what worked in your debug widget
+  const latest = lines.length ? lines[lines.length - 1] : null;
+  return latest?.dialogId || "";
 }
 
-async function fetchTranscriptSlice(limit = 10) {
-  const payload =
-    (await bindOnce("conversationTranscript.lines")) ||
-    (await bindOnce("chatTranscript.lines"));
+async function fetchTranscriptSlice(limit = 8) {
+  const payload = await bindOnce("chatTranscript.lines");
   const lines = payload?.newValue || [];
-  return Array.isArray(lines)
-    ? lines.slice(-limit).map(line => {
-        const s = (line.source || line.by || "").toLowerCase();
-        const from = s.includes("agent") ? "agent" : s.includes("bot") ? "bot" : "customer";
-        return { from, text: line.text || line.message || "", dialogId: line.dialogId || "" };
-      })
-    : [];
+  return lines.slice(-limit).map(line => {
+    const s = (line.source || line.by || "").toLowerCase();
+    return {
+      from: s.includes("customer") ? "Customer" : "Agent",
+      text: line.text || line.message || ""
+    };
+  });
 }
 
 /* -------------------------------------------------------
-   Composer
+   Insert suggested reply (FIXED)
 ------------------------------------------------------- */
 async function insertIntoComposer(text) {
   await ensureAgentSDK();
-  const cmd = (name) => new Promise(r =>
-    window.lpTag.agentSDK.command(name, { text }, () => r(true), () => r(false))
+
+  // Preferred: populate composer, don’t auto‑send
+  const ok = await new Promise(r =>
+    window.lpTag.agentSDK.command(
+      "setInputText",
+      { text },
+      () => r(true),
+      () => r(false)
+    )
   );
-  if (await cmd("SendText")) return;
-  await cmd("Write ChatLine");
+
+  // Fallback for older tenants
+  if (!ok) {
+    await new Promise(r =>
+      window.lpTag.agentSDK.command(
+        "Write ChatLine",
+        { text },
+        () => r(true),
+        () => r(false)
+      )
+    );
+  }
 }
 
 /* -------------------------------------------------------
@@ -168,27 +241,24 @@ function render() {
   $("#convId").textContent = state.convId || "(none)";
 
   const msgBox = $("#msgs");
-  msgBox.textContent = ""; // reset
-  state.messages.forEach(m => {
-    msgBox.textContent += `${m.from.toUpperCase()}: ${m.text}\n`;
-  });
+  msgBox.textContent = "";
+  state.messages
+    .filter(m => m.from === "Customer")
+    .forEach(m => {
+      msgBox.textContent += `🧑 ${m.text}\n`;
+    });
 
   $("#btnInsert").disabled = !$("#suggestedReply").value.trim();
 }
 
 /* -------------------------------------------------------
-   Manual refresh flow
+   Manual refresh
 ------------------------------------------------------- */
 async function refreshContext() {
   try {
     await ensureAgentSDK();
-
-    // 1) derive conversationId from transcript (as per your working debug)
     state.convId = await getConversationIdFromTranscript();
-
-    // 2) fetch the latest N lines
-    state.messages = await fetchTranscriptSlice(10);
-
+    state.messages = await fetchTranscriptSlice(8);
     render();
   } catch (e) {
     console.error("refreshContext failed:", e);
@@ -196,17 +266,16 @@ async function refreshContext() {
 }
 
 /* -------------------------------------------------------
-   Wire buttons + initial refresh
+   Wire up
 ------------------------------------------------------- */
 $("#btnRefresh").addEventListener("click", refreshContext);
 $("#btnInsert").addEventListener("click", () =>
   insertIntoComposer($("#suggestedReply").value)
 );
 
-// Initial manual refresh
+// Initial load
 refreshContext();
 </script>
 
 </body>
 </html>
-
