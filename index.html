@@ -35,12 +35,9 @@
       font-size:11px;
     }
 
-    #sdkStatus {
+    .muted {
+      color:#666;
       font-size:12px;
-      margin-bottom:8px;
-      padding:6px;
-      background:#f6f6f6;
-      border-radius:6px;
     }
 
     #msgs {
@@ -61,41 +58,46 @@
       border-left:3px solid #6b8cff;
       margin-top:14px;
     }
-
-    .muted {
-      color:#666;
-      font-size:12px;
-    }
   </style>
 </head>
 
 <body>
 
-  <!-- SDK status -->
-  <div id="sdkStatus">Checking LivePerson SDK…</div>
-
   <h3>BRAVO — Agent Assist <span class="badge">preview</span></h3>
   <div class="muted">
-    Real‑time guidance based on the current conversation. Review before sending — you’re always in control.
+    Real‑time guidance based on the current conversation.
+    Review before sending — you’re always in control.
   </div>
 
   <div style="margin: 8px 0;">
-    Conversation: <b id="convId">(loading…)</b>
+    Conversation: <b id="convId">(no active conversation)</b>
   </div>
 
   <div style="margin:10px 0;">
     <button id="btnRefresh">🔄 Refresh suggestions</button>
     <button id="btnInsert" disabled>Insert suggested reply</button>
+    <span class="muted" style="margin-left:8px;">
+      Suggestions update when you refresh
+    </span>
+  </div>
+
+  <!-- EMPTY / IDLE STATE -->
+  <div id="emptyState" class="assist muted" style="display:none;">
+    <b>Waiting for an active conversation</b>
+    <div style="margin-top:6px;">
+      When you accept a conversation, BRAVO will surface guidance
+      and suggested replies here.
+    </div>
   </div>
 
   <!-- ASSIST CONTENT -->
-  <div class="assist">
+  <div class="assist" id="assistContent">
     <h4>Things to keep in mind</h4>
     <ul>
       <li>
         A higher bill after a recent plan change is often due to a
-        <b>transition bill</b>, where customers can see pro‑rated charges from
-        both the old plan and the new plan on the same bill.
+        <b>transition bill</b>, where customers can see pro‑rated charges
+        from both the old plan and the new plan on the same bill.
       </li>
       <li>
         A <b>Bill Estimator</b> tool is available internally to help estimate
@@ -124,28 +126,11 @@ I’ll pull up your last bill and this month’s bill now and break down exactly
     </textarea>
   </div>
 
-  <!-- Conversation context -->
+  <!-- CONVERSATION CONTEXT -->
   <h4>Latest customer messages</h4>
   <div id="msgs"></div>
 
 <script>
-/* -------------------------------------------------------
-   SDK status indicator
-------------------------------------------------------- */
-(function () {
-  const statusEl = document.getElementById("sdkStatus");
-  const mode = () => (window.lpTag?.agentSDK ? "Agent SDK" : "No SDK detected");
-  const update = (note) =>
-    statusEl.textContent = `[${mode()}] ${note || ""}`.trim();
-
-  update("Waiting for injection…");
-  let tries = 0;
-  const t = setInterval(() => {
-    update("Waiting for injection…");
-    if (mode() !== "No SDK detected" || ++tries > 20) clearInterval(t);
-  }, 500);
-})();
-
 /* -------------------------------------------------------
    Agent SDK init
 ------------------------------------------------------- */
@@ -196,19 +181,19 @@ async function fetchTranscriptSlice(limit = 8) {
   return lines.slice(-limit).map(line => {
     const s = (line.source || line.by || "").toLowerCase();
     return {
-      from: s.includes("customer") ? "Customer" : "Agent",
+      from: s.includes("customer") ? "customer" : "agent",
       text: line.text || line.message || ""
     };
   });
 }
 
 /* -------------------------------------------------------
-   Insert suggested reply (FIXED)
+   Insert suggested reply (populate composer)
 ------------------------------------------------------- */
 async function insertIntoComposer(text) {
   await ensureAgentSDK();
 
-  // Preferred: populate composer, don’t auto‑send
+  // Preferred: populate composer, do not auto-send
   const ok = await new Promise(r =>
     window.lpTag.agentSDK.command(
       "setInputText",
@@ -218,7 +203,7 @@ async function insertIntoComposer(text) {
     )
   );
 
-  // Fallback for older tenants
+  // Fallback
   if (!ok) {
     await new Promise(r =>
       window.lpTag.agentSDK.command(
@@ -238,17 +223,30 @@ const state = { convId: "", messages: [] };
 const $ = (sel) => document.querySelector(sel);
 
 function render() {
-  $("#convId").textContent = state.convId || "(none)";
+  const hasConversation = Boolean(state.convId);
 
+  $("#convId").textContent =
+    hasConversation ? state.convId : "(no active conversation)";
+
+  // Toggle idle vs assist content
+  $("#emptyState").style.display = hasConversation ? "none" : "block";
+  $("#assistContent").style.display = hasConversation ? "block" : "none";
+
+  // Messages
   const msgBox = $("#msgs");
   msgBox.textContent = "";
-  state.messages
-    .filter(m => m.from === "Customer")
-    .forEach(m => {
-      msgBox.textContent += `🧑 ${m.text}\n`;
-    });
 
-  $("#btnInsert").disabled = !$("#suggestedReply").value.trim();
+  if (hasConversation) {
+    state.messages
+      .filter(m => m.from === "customer")
+      .forEach(m => {
+        msgBox.textContent += `🧑 ${m.text}\n`;
+      });
+  }
+
+  // Insert button
+  $("#btnInsert").disabled =
+    !hasConversation || !$("#suggestedReply").value.trim();
 }
 
 /* -------------------------------------------------------
@@ -273,8 +271,8 @@ $("#btnInsert").addEventListener("click", () =>
   insertIntoComposer($("#suggestedReply").value)
 );
 
-// Initial load
-refreshContext();
+// Initial render
+render();
 </script>
 
 </body>
