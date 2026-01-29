@@ -2,27 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>LP Debug Widget</title>
+  <title>LP Debug Widget (Simple)</title>
   <!-- Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
+  <style>
+    body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
+    #log { white-space: pre-wrap; border:1px solid #ddd; padding:8px; background:#fafafa; max-height:260px; overflow:auto; }
+    .muted { color:#666 }
+  </style>
 </head>
 <body>
-  <h1>LP Debug Widget 1.0.6</h1>
-  <p>Open the browser console to see logs.</p>
+  <h1>LP Debug Widget</h1>
+  <div class="muted">Accept/open a conversation, then watch the log.</div>
+  <div id="log"></div>
 
   <script>
-    // Minimal logging
-    const log = (...a) => console.log('[LP-DEBUG]', ...a);
-    const warn = (...a) => console.warn('[LP-DEBUG]', ...a);
-    const err = (...a) => console.error('[LP-DEBUG]', ...a);
+    // --- tiny logger ---
+    const $log = document.getElementById('log');
+    function out(level, ...a) {
+      (console[level] || console.log)(...a);
+      $log.textContent += a.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(' ') + '\n';
+      $log.scrollTop = $log.scrollHeight;
+    }
+    const log  = (...a) => out('log',  '[LP-DEBUG]', ...a);
+    const warn = (...a) => out('warn', '[LP-DEBUG]', ...a);
+    const err  = (...a) => out('error','[LP-DEBUG]', ...a);
 
-    // Wait for lpTag.agentSDK to exist
-    function waitForAgentSDK(timeout = 8000) {
-      return new Promise((resolve, reject) => {
+    // Wait for lpTag.agentSDK
+    function waitForAgentSDK(ms = 8000) {
+      return new Promise((res, rej) => {
         const t0 = Date.now();
         (function poll() {
-          if (window.lpTag && window.lpTag.agentSDK) return resolve(window.lpTag.agentSDK);
-          if (Date.now() - t0 > timeout) return reject(new Error('lpTag.agentSDK not found'));
+          if (window.lpTag && window.lpTag.agentSDK) return res(window.lpTag.agentSDK);
+          if (Date.now() - t0 > ms) return rej(new Error('lpTag.agentSDK not found'));
           setTimeout(poll, 100);
         })();
       });
@@ -34,35 +46,24 @@
         agentSDK.init({});
         log('agentSDK.init() called');
 
-        // Prefer BIND so we get the value when it becomes available
-        const candidates = [
-          { path: 'conversationInfo.conversationId', pick: v => v },
-          { path: 'conversationInfo',               pick: v => v && (v.conversationId || v.id) },
-          { path: 'chatInfo.chatId',                pick: v => v },
-          { path: 'conversationData.id',            pick: v => v },
-          { path: 'conversationData',               pick: v => v && (v.id || v.conversationId) }
-        ];
+        // Print the conversation ID once, using dialogId from transcript lines
+        let printedConvId = false;
 
-        let printed = false;
-
-        candidates.forEach(({ path, pick }) => {
-          agentSDK.bind(path, (data) => {
-            const val = data && data.newValue !== undefined ? data.newValue : data;
-            const convId = pick(val);
-            if (!printed && convId) {
-              printed = true;
-              log('Conversation ID:', convId, `(via "${path}")`);
-              // Optional: unbind all once we have it
-              candidates.forEach(c => { try { agentSDK.unbind(c.path); } catch(e){} });
-            }
-          }, (e) => { if (e) warn(`bind error on ${path}`, e); });
-        });
-
-        // Tiny transcript bind to confirm widget is attached to an active convo
         agentSDK.bind('chatTranscript.lines', (data) => {
           const lines = (data && data.newValue) || [];
-          if (lines.length) log('Transcript lines (latest):', lines[lines.length - 1]);
-        });
+          if (!lines.length) return;
+
+          const latest = lines[lines.length - 1];
+          log('Transcript line (latest):', latest);
+
+          if (!printedConvId && latest && latest.dialogId) {
+            printedConvId = true;
+            log('Conversation ID:', latest.dialogId, '(via transcript.dialogId)');
+
+            // Optional: stop listening once we have the ID
+            try { agentSDK.unbind('chatTranscript.lines'); } catch (e) {}
+          }
+        }, (e) => { if (e) warn('bind error on chatTranscript.lines', e); });
 
       } catch (e) {
         err('Initialization failed:', e);
@@ -71,5 +72,3 @@
   </script>
 </body>
 </html>
-
-
