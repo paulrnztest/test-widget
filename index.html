@@ -1,190 +1,47 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>BRAVO (PoC) — Placeholder Widget</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root { font-family: "Segoe UI", system-ui, Arial, sans-serif; }
-    body { margin: 0; padding: 12px; }
-    button { padding: 6px 10px; cursor: pointer; }
-    textarea { width: 100%; box-sizing: border-box; }
-    h3 { margin: 0 0 8px 0; }
-    h4 { margin-top: 16px; }
-    ul { margin: 6px 0 0 18px; }
-    .badge { background: #e8e8e8; padding: 3px 6px; border-radius: 6px; font-size: 11px; }
-  </style>
-</head>
-
-<body>
-  <div id="sdkStatus"
-       style="font:12px Segoe UI, Arial; color:#444; background:#f6f6f6; padding:6px 8px; margin:0 0 8px 0; border-radius:6px;">
-    Initialising LivePerson SDK…
-  </div>
-
-  <h3>BRAVO (PoC) <span class="badge">debug</span></h3>
-
-  <div style="margin: 8px 0;">
-    Conversation: <b id="convId">(none)</b>
-  </div>
-
-  <div style="margin: 10px 0;">
-    <button id="btnRefresh">Refresh Context</button>
-    <button id="btnInsert" disabled>Insert Suggested Reply</button>
-  </div>
-
-  <!-- Placeholder Panels -->
-  <h4>Relevant Information</h4>
-  <ul id="relevantInfo">
-    <li>A higher bill after a recent plan change is often due to a <b>transition bill</b> where customers can see pro-rated charges from the old plan and new plan on the same bill.</li>
-    <li>A <b>Bill Estimator</b> tool is available internally to help estimate charges when customers change broadband plans.</li>
-  </ul>
-
-  <h4>Suggested Next Steps</h4>
-  <ul id="nextSteps">
-    <li>Check in Spark CRM what plan the customer was on, what plan they moved to, and the <b>effective date of the change.</b></li>
-    <li>Compare the last bill and the current bill to identify <b>pro-rated old plan charges/credits</b> and the <b>new plan charges</b>.</li>
-  </ul>
-
-  <h4>Suggested Reply</h4>
-  <textarea id="suggestedReply" rows="4" readonly>
-Thanks for letting me know you’ve changed plans – that’s really helpful. When a plan changes, the first bill afterwards can look higher because it can include part of your old plan, part of your new plan, and any credits or adjustments for the changeover. I’ll pull up your last bill and this month’s bill now and break down exactly what’s different so you can see what’s one-off for the change and what your regular monthly cost will be going forward.
-  </textarea>
-
-  <!-- Latest Messages -->
-  <h4>Latest Messages</h4>
-  <ul id="msgs"></ul>
-  <small>(Powered by LivePerson Agent SDK)</small>
-
-  <!-- Agent SDK -->
+  <meta charset="UTF-8">
+  <title>LivePerson Debug Widget</title>
+  <!-- Load the LivePerson Web Agent SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
+</head>
+<body>
+  <h1>LivePerson Debug Widget</h1>
+  <p>Open your console to see logs.</p>
 
   <script>
-  /* =======================================================
-     DEBUG LOGGING
-     ======================================================= */
-  window.lpTag = window.lpTag || {};
-  lpTag.log = console.log;
+    console.log("Debug Widget Starting...");
 
-  const $ = sel => document.querySelector(sel);
+    // --- 1️⃣ Initialize Agent SDK ---
+    const siteId = "YOUR_SITE_ID"; // <-- replace with your LivePerson site ID
 
-  /* =======================================================
-     SDK INIT
-     ======================================================= */
-  async function waitForSDK(timeout = 8000) {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      if (window.lpTag?.agentSDK) return;
-      await new Promise(r => setTimeout(r, 100));
-    }
-    throw new Error("AgentSDK not available");
-  }
+    lpTag.agentSDK.init({ siteId })
+      .then(() => {
+        console.log("Agent SDK initialized successfully!");
 
-  async function initSDK() {
-    await waitForSDK();
-    lpTag.agentSDK.init();
-    $("#sdkStatus").textContent = "Agent SDK initialised";
-    console.log("[LP] AgentSDK initialised");
-  }
-
-  /* =======================================================
-     CONTEXT (GLOBAL WIDGET)
-     ======================================================= */
-  async function getActiveConversationId() {
-    const ctx = await lpTag.agentSDK.getContext();
-    console.log("[LP] Context:", ctx);
-
-    if (!ctx?.currentConversation) return "";
-    return ctx.currentConversation.conversationId;
-  }
-
-  async function fetchTranscript(convId, limit = 5) {
-    if (!convId) return [];
-
-    const lines = await lpTag.agentSDK.get("conversationTranscript.lines");
-    if (!Array.isArray(lines)) return [];
-
-    return lines.slice(-limit).map(line => {
-      const by = (line.source || "").toLowerCase();
-      const from =
-        by.includes("agent") ? "agent" :
-        by.includes("bot")   ? "bot"   :
-                               "customer";
-
-      return { from, text: line.text || "" };
-    });
-  }
-
-  /* =======================================================
-     COMPOSER
-     ======================================================= */
-  async function insertIntoComposer(text) {
-    lpTag.agentSDK.command(
-      "Write ChatLine",
-      { text },
-      () => console.log("[LP] Text inserted"),
-      err => console.warn("[LP] Insert failed", err)
-    );
-  }
-
-  /* =======================================================
-     STATE + RENDER
-     ======================================================= */
-  const state = { convId: "", messages: [] };
-
-  function render() {
-    $("#convId").textContent = state.convId || "(none)";
-
-    const msgList = $("#msgs");
-    msgList.innerHTML = "";
-    state.messages.forEach(m => {
-      const li = document.createElement("li");
-      li.innerHTML = `<b>${m.from}:</b> ${m.text}`;
-      msgList.appendChild(li);
-    });
-
-    $("#btnInsert").disabled = !$("#suggestedReply").value.trim();
-  }
-
-  async function refreshContext() {
-    try {
-      state.convId = await getActiveConversationId();
-      state.messages = await fetchTranscript(state.convId, 5);
-      render();
-    } catch (e) {
-      console.error("refreshContext failed", e);
-    }
-  }
-
-  /* =======================================================
-     EVENTS
-     ======================================================= */
-  $("#btnRefresh").addEventListener("click", refreshContext);
-  $("#btnInsert").addEventListener("click", () => {
-    insertIntoComposer($("#suggestedReply").value);
-  });
-
-  /* =======================================================
-     BOOTSTRAP
-     ======================================================= */
-  (async function bootstrap() {
-    try {
-      await initSDK();
-      await refreshContext();
-
-      // Rebind when agent switches conversations
-      lpTag.agentSDK.subscribe(
-        lpTag.agentSDK.EVENTS.AGENT_CONTEXT,
-        () => {
-          console.log("[LP] Agent context changed");
-          refreshContext();
+        // --- 2️⃣ Function to fetch current conversation ID ---
+        function printConversationId() {
+          const context = lpTag.agentSDK.getContextData?.(); // safe call
+          if (context && context.CONVERSATION && context.CONVERSATION.ID) {
+            console.log("Active Conversation ID:", context.CONVERSATION.ID);
+          } else {
+            console.warn("No active conversation yet.");
+          }
         }
-      );
-    } catch (e) {
-      console.error("Bootstrap failed", e);
-      $("#sdkStatus").textContent = "Agent SDK failed to load";
-    }
-  })();
+
+        // --- 3️⃣ Fetch once immediately ---
+        printConversationId();
+
+        // --- 4️⃣ Refresh periodically (every 5 seconds) ---
+        setInterval(() => {
+          printConversationId();
+        }, 5000);
+
+      })
+      .catch(err => {
+        console.error("Failed to initialize Agent SDK:", err);
+      });
   </script>
 </body>
 </html>
