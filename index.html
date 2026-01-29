@@ -6,7 +6,7 @@
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 </head>
 <body>
-  <h1>Debug Widget v1.0.1</h1> <!-- Version displayed on the page -->
+  <h1>Debug Widget v1.0.2</h1> <!-- Version displayed on the page -->
   <p>Open the console to see logs for the conversation ID.</p>
 
   <script>
@@ -28,6 +28,7 @@
         // Poll for conversation ID every 5 seconds
         setInterval(() => {
           const context = agentSDK.getContextData?.();
+          console.log("Full agentSDK context:", agentSDK.getContextData?.());
           if (context?.CONVERSATION?.ID) {
             console.log("Active Conversation ID:", context.CONVERSATION.ID);
           } else {
@@ -52,3 +53,4 @@
   </script>
 </body>
 </html>
+
