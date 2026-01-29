@@ -5,7 +5,7 @@
   <title>BRAVO — Agent Assist (PoC)</title>
 
   <!-- LivePerson Agent Workspace Widget SDK -->
-  <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
+  https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js</script>
 
   <style>
     body {
@@ -17,10 +17,7 @@
     h4 { margin-top: 16px; }
     ul { margin: 6px 0 0 18px; }
 
-    button {
-      padding: 6px 10px;
-      cursor:pointer;
-    }
+    button { padding: 6px 10px; cursor:pointer; }
 
     textarea {
       width:100%;
@@ -51,12 +48,15 @@
       font-size:13px;
     }
 
-    /* Assist / BRAVO styling */
     .assist {
       background:#f7f9fc;
       padding:10px;
       border-left:3px solid #6b8cff;
       margin-top:14px;
+    }
+
+    #timestamp {
+      margin-left:8px;
     }
   </style>
 </head>
@@ -76,9 +76,7 @@
   <div style="margin:10px 0;">
     <button id="btnRefresh">🔄 Refresh suggestions</button>
     <button id="btnInsert" disabled>Insert suggested reply</button>
-    <span class="muted" style="margin-left:8px;">
-      Suggestions update when you refresh
-    </span>
+    <span id="timestamp" class="muted"></span>
   </div>
 
   <!-- EMPTY / IDLE STATE -->
@@ -166,7 +164,7 @@ function bindOnce(path) {
 }
 
 /* -------------------------------------------------------
-   Context helpers (manual refresh)
+   Context helpers
 ------------------------------------------------------- */
 async function getConversationIdFromTranscript() {
   const payload = await bindOnce("chatTranscript.lines");
@@ -193,7 +191,6 @@ async function fetchTranscriptSlice(limit = 8) {
 async function insertIntoComposer(text) {
   await ensureAgentSDK();
 
-  // Preferred: populate composer, do not auto-send
   const ok = await new Promise(r =>
     window.lpTag.agentSDK.command(
       "setInputText",
@@ -203,7 +200,6 @@ async function insertIntoComposer(text) {
     )
   );
 
-  // Fallback
   if (!ok) {
     await new Promise(r =>
       window.lpTag.agentSDK.command(
@@ -214,6 +210,15 @@ async function insertIntoComposer(text) {
       )
     );
   }
+}
+
+/* -------------------------------------------------------
+   Timestamp helper
+------------------------------------------------------- */
+function updateTimestamp() {
+  const el = document.getElementById("timestamp");
+  const now = new Date();
+  el.textContent = `Last updated ${now.toLocaleTimeString()}`;
 }
 
 /* -------------------------------------------------------
@@ -228,11 +233,9 @@ function render() {
   $("#convId").textContent =
     hasConversation ? state.convId : "(no active conversation)";
 
-  // Toggle idle vs assist content
   $("#emptyState").style.display = hasConversation ? "none" : "block";
   $("#assistContent").style.display = hasConversation ? "block" : "none";
 
-  // Messages
   const msgBox = $("#msgs");
   msgBox.textContent = "";
 
@@ -244,7 +247,6 @@ function render() {
       });
   }
 
-  // Insert button
   $("#btnInsert").disabled =
     !hasConversation || !$("#suggestedReply").value.trim();
 }
@@ -257,11 +259,38 @@ async function refreshContext() {
     await ensureAgentSDK();
     state.convId = await getConversationIdFromTranscript();
     state.messages = await fetchTranscriptSlice(8);
+    updateTimestamp();
     render();
   } catch (e) {
     console.error("refreshContext failed:", e);
   }
 }
+
+/* -------------------------------------------------------
+   Auto‑connect once on first conversation
+------------------------------------------------------- */
+let _autoConnected = false;
+
+async function attachAutoConnectListener() {
+  await ensureAgentSDK();
+
+  const handler = (data) => {
+    if (_autoConnected) return;
+
+    const lines = data?.newValue || [];
+    const latest = lines.length ? lines[lines.length - 1] : null;
+
+    if (latest?.dialogId) {
+      _autoConnected = true;
+      refreshContext();
+      try { window.lpTag.agentSDK.unbind("chatTranscript.lines", handler); } catch {}
+    }
+  };
+
+  window.lpTag.agentSDK.bind("chatTranscript.lines", handler, () => {});
+}
+
+attachAutoConnectListener();
 
 /* -------------------------------------------------------
    Wire up
@@ -271,7 +300,7 @@ $("#btnInsert").addEventListener("click", () =>
   insertIntoComposer($("#suggestedReply").value)
 );
 
-// Initial render
+// Initial render (idle)
 render();
 </script>
 
