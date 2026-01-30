@@ -263,10 +263,17 @@ function updateTimestamp() {
 function renderReferences(refs) {
   const section = document.getElementById("referencesSection");
   const toggle  = document.getElementById("referencesToggle");
-  const countEl = document.getElementById("referencesCount");
   const list    = document.getElementById("referencesList");
 
+  // Defensive guard: if markup changes, fail silently
+  if (!section || !toggle || !list) {
+    console.debug("[BRAVO] References UI elements missing; skipping renderReferences()");
+    return;
+  }
+
   const arr = Array.isArray(refs) ? refs : [];
+
+  // No references → hide entire section
   if (!arr.length) {
     section.style.display = "none";
     list.style.display = "none";
@@ -274,22 +281,30 @@ function renderReferences(refs) {
     return;
   }
 
-  countEl.textContent = arr.length;
-
+  // Render list
   list.innerHTML = arr.map(r => {
     const title = r?.title || r?.url || "Reference";
-    const url = r?.url || "#";
-    return `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a></li>`;
+    const url   = r?.url || "#";
+
+    return `
+      <li>
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
+          ${escapeHtml(title)}
+        </a>
+      </li>
+    `;
   }).join("");
 
+  // Show collapsed by default
   section.style.display = "block";
   list.style.display = "none";
   toggle.innerHTML = `▶ ${arr.length} reference(s)`;
 
+  // Toggle behaviour
   toggle.onclick = () => {
-    const open = list.style.display === "block";
-    list.style.display = open ? "none" : "block";
-    toggle.innerHTML = `${open ? "▶" : "▼"} ${arr.length} reference(s)`;
+    const expanded = list.style.display === "block";
+    list.style.display = expanded ? "none" : "block";
+    toggle.innerHTML = `${expanded ? "▶" : "▼"} ${arr.length} reference(s)`;
   };
 }
 
@@ -422,3 +437,4 @@ autoConnectOnce();
 
 </body>
 </html>
+
