@@ -17,13 +17,8 @@
     h4 { margin-top: 16px; }
     ul { margin: 6px 0 0 18px; }
 
-    button { padding: 6px 10px; cursor:pointer; }
-
-    textarea {
-      width:100%;
-      box-sizing:border-box;
-      resize: vertical;
-    }
+    button { padding:6px 10px; cursor:pointer; }
+    textarea { width:100%; box-sizing:border-box; resize:vertical; }
 
     .badge {
       background:#e8e8e8;
@@ -32,10 +27,7 @@
       font-size:11px;
     }
 
-    .muted {
-      color:#666;
-      font-size:12px;
-    }
+    .muted { color:#666; font-size:12px; }
 
     #msgs {
       white-space: pre-wrap;
@@ -55,284 +47,227 @@
       margin-top:14px;
     }
 
-    #timestamp {
-      margin-left:8px;
-    }
+    #timestamp { margin-left:8px; }
+
+    /* References */
+    #referencesToggle { cursor:pointer; user-select:none; }
+    #referencesList a { text-decoration:none; }
+    #referencesList a:hover { text-decoration:underline; }
   </style>
 </head>
 
 <body>
 
-  <h3>BRAVO — Agent Assist <span class="badge">preview 1.0.14</span></h3>
-  <div class="muted">
-    Real‑time guidance based on the current conversation.
-    Review before sending — you’re always in control.
+<h3>BRAVO — Agent Assist <span class="badge">preview 1.0.16</span></h3>
+<div class="muted">
+  Real‑time guidance based on the current conversation.  
+  Review before sending — you’re always in control.
+</div>
+
+<div style="margin:8px 0;">
+  Conversation: <b id="convId">(no active conversation)</b>
+</div>
+
+<div style="margin:10px 0;">
+  <button id="btnRefresh">🔄 Refresh suggestions</button>
+  <button id="btnInsert" disabled>Insert suggested reply</button>
+  <span id="timestamp" class="muted"></span>
+</div>
+
+<!-- IDLE / EMPTY STATE -->
+<div id="emptyState" class="assist muted" style="display:none;">
+  <b>No suggestions yet</b>
+  <div style="margin-top:6px;">
+    Click <i>Refresh suggestions</i> to load BRAVO guidance for this conversation.
   </div>
+</div>
 
-  <div style="margin: 8px 0;">
-    Conversation: <b id="convId">(no active conversation)</b>
+<!-- ASSIST CONTENT -->
+<div class="assist" id="assistContent">
+  <h4>What to keep in mind</h4>
+  <ul id="thingsList"></ul>
+
+  <h4>What to do next</h4>
+  <ul id="stepsList"></ul>
+
+  <h4>Suggested reply <span class="muted">(editable)</span></h4>
+  <textarea id="suggestedReply"
+            rows="4"
+            readonly
+            placeholder="BRAVO suggestions will appear here."></textarea>
+
+  <!-- References -->
+  <div id="referencesSection" class="muted" style="margin-top:10px; display:none;">
+    <div id="referencesToggle">▶ <span id="referencesCount"></span> reference(s)</div>
+    <ul id="referencesList" style="display:none;"></ul>
   </div>
+</div>
 
-  <div style="margin:10px 0;">
-    <button id="btnRefresh">🔄 Refresh suggestions</button>
-    <button id="btnInsert" disabled>Insert suggested reply</button>
-    <span id="timestamp" class="muted"></span>
-  </div>
-
-  <!-- EMPTY / IDLE STATE -->
-  <div id="emptyState" class="assist muted" style="display:none;">
-    <b>Waiting for an active conversation</b>
-    <div style="margin-top:6px;">
-      When you accept a conversation, BRAVO will surface guidance
-      and suggested replies here.
-    </div>
-  </div>
-
-  <!-- ASSIST CONTENT -->
-  <div class="assist" id="assistContent">
-    <h4>Things to keep in mind</h4>
-    <ul>
-      <li>
-        Top-up / payment channels <b>recently had a known issue</b> affecting some self-service top-ups and payments; advisors should be aware this may explain unexpected behaviour, but <b>the issue is now resolved</b> and BAU applies.
-      </li>
-      <li>
-        Refund or credit decisions must follow standard (BAU) refund/billing processes, as there is <b>no special exception process documented</b> here for duplicate top-up packs.
-      </li>
-    </ul>
-
-    <h4>What to check next</h4>
-    <ul>
-      <li>
-        Check the customer’s recent top-up history and pack activations to confirm whether two identical packs were purchased and successfully applied, and if this <b>coincides with the reported self-service issue window</b>.
-      </li>
-      <li>
-        Follow BAU refund/credit assessment and processing for mobile/prepaid where applicable, documenting the situation clearly (double charge, no intent to buy two packs) and whether any system error is suspected.
-      </li>
-    </ul>
-
-    <h4>Suggested reply <span class="muted">(editable)</span></h4>
-    <textarea id="suggestedReply" rows="4" readonly>
-Thanks for letting us know what’s happened, that does sound frustrating.
-      
-I’ll first take a look at your recent top-ups to confirm what was charged and which packs have actually been applied. Once I can see exactly what’s gone through, I’ll review whether we can reverse or credit one of those pack purchases for you and talk you through the options.
-      
-I’ll come back to you shortly with what I find and what we can do next.
-    </textarea>
-  </div>
-
-  <!-- CONVERSATION CONTEXT -->
-  <h4>Latest customer messages</h4>
-  <div id="msgs"></div>
+<h4>Latest customer messages</h4>
+<div id="msgs"></div>
 
 <script>
-/* -------------------------------------------------------
-   Agent SDK init
-------------------------------------------------------- */
-async function waitForAgentSDK(ms = 8000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    if (window.lpTag?.agentSDK) return;
-    await new Promise(r => setTimeout(r, 100));
+/* ---------- SDK helpers ---------- */
+async function waitForAgentSDK(ms=8000){
+  const t=Date.now();
+  while(Date.now()-t<ms){
+    if(window.lpTag?.agentSDK) return;
+    await new Promise(r=>setTimeout(r,100));
   }
-  throw new Error("Agent SDK not found in iframe.");
+  throw new Error("Agent SDK not available");
 }
 
-let _inited = false;
-async function ensureAgentSDK() {
-  if (_inited) return;
+let sdkInit=false;
+async function ensureSDK(){
+  if(sdkInit) return;
   await waitForAgentSDK();
-  window.lpTag.agentSDK.init({});
-  _inited = true;
-  console.log("[LP] agentSDK initialised");
+  lpTag.agentSDK.init({});
+  sdkInit=true;
 }
 
-/* -------------------------------------------------------
-   One‑shot bind helper
-------------------------------------------------------- */
-function bindOnce(path) {
-  return new Promise((resolve) => {
-    const cb = (data) => {
-      try { window.lpTag.agentSDK.unbind(path, cb); } catch {}
-      resolve(data);
+/* ---------- Bind helper ---------- */
+function bindOnce(path){
+  return new Promise(resolve=>{
+    const cb=d=>{
+      try{lpTag.agentSDK.unbind(path,cb);}catch{}
+      resolve(d);
     };
-    window.lpTag.agentSDK.bind(path, cb, () => resolve(null));
+    lpTag.agentSDK.bind(path,cb,()=>resolve(null));
   });
 }
 
-/* -------------------------------------------------------
-   Context helpers
-------------------------------------------------------- */
-async function getConversationIdFromTranscript() {
-  const payload = await bindOnce("chatTranscript.lines");
-  const lines = payload?.newValue || [];
-  const latest = lines.length ? lines[lines.length - 1] : null;
-  return latest?.dialogId || "";
+/* ---------- Context ---------- */
+async function getConversationId(){
+  const p=await bindOnce("chatTranscript.lines");
+  const l=p?.newValue||[];
+  return l.length?l[l.length-1].dialogId:"";
 }
 
-async function fetchTranscriptSlice(limit = 8) {
-  const payload = await bindOnce("chatTranscript.lines");
-  const lines = payload?.newValue || [];
-
-  return Array.isArray(lines)
-    ? lines.slice(-limit).map(line => {
-        const s = (line.source || line.by || "").toLowerCase();
-
-        // Explicit role detection
-        const isCustomer =
-          s.includes("consumer") ||
-          s.includes("visitor") ||
-          s.includes("customer");
-
-        const isAgent = s.includes("agent");
-        const isBot = s.includes("bot");
-
-        // Ignore system / controller / manager messages
-        if (!isCustomer && !isAgent && !isBot) {
-          return null;
-        }
-
-        return {
-          from: isCustomer ? "customer" : isBot ? "bot" : "agent",
-          text: line.text || line.message || "",
-          dialogId: line.dialogId || ""
-        };
-      }).filter(Boolean) // remove null (system) lines
-    : [];
-}
-
-/* -------------------------------------------------------
-   Insert suggested reply (populate composer)
-------------------------------------------------------- */
-async function insertIntoComposer(text) {
-  await ensureAgentSDK();
-
-  const sdk = window.lpTag.agentSDK;
-  const cmdNames = sdk.cmdNames || {};
-  const payload = { text: (text || "").trim() };
-
-  if (!payload.text) return;
-
-  const tryCmd = (cmdName) => new Promise((resolve) => {
-    sdk.command(
-      cmdName,
-      payload,
-      () => { console.log("[BRAVO] Insert OK via", cmdName); resolve(true); },
-      (e) => { console.warn("[BRAVO] Insert FAIL via", cmdName, e); resolve(false); }
-    );
-  });
-
-  // 1) Preferred: write (most common insert-to-input behavior)
-  if (cmdNames.write) {
-    const ok = await tryCmd(cmdNames.write);
-    if (ok) return;
-  }
-
-  // 2) Fallback: writeSC (secure channel)
-  if (cmdNames.writeSC) {
-    const ok = await tryCmd(cmdNames.writeSC);
-    if (ok) return;
-  }
-
-  // If neither exists, warn
-  console.warn("[BRAVO] No supported insert command found. cmdNames:", cmdNames);
-}
-
-/* -------------------------------------------------------
-   Timestamp helper
-------------------------------------------------------- */
-function updateTimestamp() {
-  const el = document.getElementById("timestamp");
-  const now = new Date();
-  el.textContent = `Last updated ${now.toLocaleTimeString()}`;
-}
-
-/* -------------------------------------------------------
-   State + render
-------------------------------------------------------- */
-const state = { convId: "", messages: [] };
-const $ = (sel) => document.querySelector(sel);
-
-function render() {
-  const hasConversation = Boolean(state.convId);
-
-  $("#convId").textContent =
-    hasConversation ? state.convId : "(no active conversation)";
-
-  $("#emptyState").style.display = hasConversation ? "none" : "block";
-  $("#assistContent").style.display = hasConversation ? "block" : "none";
-
-  const msgBox = $("#msgs");
-  msgBox.textContent = "";
-
-  if (hasConversation) {
-    state.messages
-      .filter(m => m.from === "customer")
-      .forEach(m => {
-        msgBox.textContent += `🧑 ${m.text}\n`;
-      });
-  }
-
-  $("#btnInsert").disabled =
-    !hasConversation || !$("#suggestedReply").value.trim();
-}
-
-/* -------------------------------------------------------
-   Manual refresh
-------------------------------------------------------- */
-async function refreshContext() {
-  try {
-    await ensureAgentSDK();
-    state.convId = await getConversationIdFromTranscript();
-    state.messages = await fetchTranscriptSlice(8);
-    updateTimestamp();
-    render();
-  } catch (e) {
-    console.error("refreshContext failed:", e);
-  }
-}
-
-/* -------------------------------------------------------
-   Auto‑connect once on first conversation
-------------------------------------------------------- */
-let _autoConnected = false;
-
-async function attachAutoConnectListener() {
-  await ensureAgentSDK();
-
-  const handler = (data) => {
-    if (_autoConnected) return;
-
-    const lines = data?.newValue || [];
-    const latest = lines.length ? lines[lines.length - 1] : null;
-
-    if (latest?.dialogId) {
-      _autoConnected = true;
-      refreshContext();
-      try { window.lpTag.agentSDK.unbind("chatTranscript.lines", handler); } catch {}
+async function getCustomerMessages(limit=12){
+  const p=await bindOnce("chatTranscript.lines");
+  const l=p?.newValue||[];
+  return l.slice(-limit).map(x=>{
+    const s=(x.source||x.by||"").toLowerCase();
+    if(s.includes("consumer")||s.includes("visitor")||s.includes("customer")){
+      return x.text||x.message||"";
     }
-  };
-
-  window.lpTag.agentSDK.bind("chatTranscript.lines", handler, () => {});
+    return null;
+  }).filter(Boolean);
 }
 
-attachAutoConnectListener();
+/* ---------- Fake BRAVO ---------- */
+async function fetchFakeBravo(){
+  const r=await fetch("./fake-bravo/default.json",{cache:"no-store"});
+  if(!r.ok) throw new Error("Fake BRAVO unavailable");
+  return r.json();
+}
 
-/* -------------------------------------------------------
-   Wire up
-------------------------------------------------------- */
-$("#btnRefresh").addEventListener("click", refreshContext);
-$("#btnInsert").addEventListener("click", () =>
-  insertIntoComposer($("#suggestedReply").value)
-);
+/* ---------- Insert ---------- */
+async function insertReply(text){
+  if(!text) return;
+  await ensureSDK();
+  const sdk=lpTag.agentSDK;
+  const c=sdk.cmdNames||{};
+  const p={text:text.trim()};
+  const tryCmd=n=>new Promise(res=>sdk.command(n,p,()=>res(true),()=>res(false)));
+  if(c.write && await tryCmd(c.write)) return;
+  if(c.writeSC && await tryCmd(c.writeSC)) return;
+}
 
-// Initial render (idle)
+/* ---------- References ---------- */
+function renderReferences(refs){
+  const sec=$("#referencesSection"),tgl=$("#referencesToggle"),
+        cnt=$("#referencesCount"),list=$("#referencesList");
+  if(!Array.isArray(refs)||!refs.length){
+    sec.style.display="none";
+    return;
+  }
+  cnt.textContent=refs.length;
+  list.innerHTML=refs.map(r=>`<li>${a(r.url)}${e(r.title||r.url)}</a></li>`).join("");
+  sec.style.display="block";
+  list.style.display="none";
+  tgl.innerHTML=`▶ ${refs.length} reference(s)`;
+  tgl.onclick=()=>{
+    const open=list.style.display==="block";
+    list.style.display=open?"none":"block";
+    tgl.innerHTML=`${open?"▶":"▼"} ${refs.length} reference(s)`;
+  };
+}
+
+/* ---------- Rendering ---------- */
+const state={convId:"",messages:[],bravo:null};
+
+const $=s=>document.querySelector(s);
+const e=s=>String(s).replace(/[&<>"]/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[m]));
+const a=u=>`<a href="${e(u)}" target="_blank">`;
+
+function clearUI(){
+  $("#thingsList").innerHTML=`<li class="muted">No guidance available.</li>`;
+  $("#stepsList").innerHTML="";
+  $("#suggestedReply").value="";
+  renderReferences([]);
+}
+
+function render(){
+  const connected=!!state.convId;
+  $("#convId").textContent=connected?state.convId:"(no active conversation)";
+  $("#emptyState").style.display=connected && !state.bravo ? "block" : "none";
+  $("#assistContent").style.display=connected ? "block" : "none";
+
+  $("#msgs").textContent=state.messages.map(m=>`🧑 ${m}`).join("\n");
+
+  if(connected && state.bravo){
+    const b=state.bravo;
+    $("#thingsList").innerHTML=(b.relevantInfo||[]).map(x=>`<li>${e(x)}</li>`).join("");
+    $("#stepsList").innerHTML=(b.nextSteps||[]).map(x=>`<li>${e(x)}</li>`).join("");
+    $("#suggestedReply").value=b.suggestedReply||"";
+    renderReferences(b.references||[]);
+  } else if (connected) {
+    clearUI();
+  }
+
+  $("#btnInsert").disabled=!connected||!$("#suggestedReply").value;
+}
+
+/* ---------- Refresh ---------- */
+async function refresh(){
+  try{
+    await ensureSDK();
+    state.convId=await getConversationId();
+    state.messages=await getCustomerMessages();
+    if(state.convId){
+      try{ state.bravo=await fetchFakeBravo(); }
+      catch{ state.bravo=null; }
+    }else{
+      state.bravo=null;
+    }
+    $("#timestamp").textContent=`Last updated ${new Date().toLocaleTimeString()}`;
+    render();
+  }catch(e){console.error(e);}
+}
+
+/* ---------- Auto-connect once ---------- */
+let connectedOnce=false;
+async function autoConnect(){
+  await ensureSDK();
+  lpTag.agentSDK.bind("chatTranscript.lines",async d=>{
+    if(connectedOnce) return;
+    const l=d?.newValue||[];
+    if(l.length && reminds(l[l.length-1]?.dialogId)){
+      connectedOnce=true;
+      await refresh();
+    }
+  });
+}
+
+function reminds(x){return!!x;}
+
+$("#btnRefresh").onclick=refresh;
+$("#btnInsert").onclick=()=>insertReply($("#suggestedReply").value);
+
 render();
+autoConnect();
 </script>
 
 </body>
 </html>
-
-
-
-
-
