@@ -1,0 +1,21 @@
+{
+  "relevantInfo": [
+    "A higher bill after a plan change is often due to a transition bill with <b>pro‑rated old and new plan charges</b>.",
+    "A Bill Estimator tool is available internally to help estimate plan‑change charges."
+  ],
+  "nextSteps": [
+    "Confirm the previous plan, new plan, and effective date in CRM.",
+    "Compare last bill vs current bill for pro‑rated charges/credits and new plan charges."
+  ],
+  "suggestedReply": "Thanks for letting me know you’ve changed plans – that’s really helpful. When a plan changes, the first bill afterwards can look higher because it can include part of your old plan, part of your new plan, and any credits or adjustments for the changeover. I’ll pull up your last bill and this month’s bill now and break down exactly what’s different so you can see what’s one‑off for the change and what your regular monthly cost will be going forward.",
+  "references": [
+    {
+      "title": "Billing — Plan change & pro‑rating (Internal guide)",
+      "url": "https://example.internal/plan-change-billing"
+    },
+    {
+      "title": "Bill Estimator tool",
+      "url": "https://example.internal/bill-estimator"
+    }
+  ]
+}
