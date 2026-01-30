@@ -1,21 +1,17 @@
 {
   "relevantInfo": [
-    "A higher bill after a plan change is often due to a **transition bill** with pro‑rated old and new plan charges.",
-    "A Bill Estimator tool is available internally to help estimate plan‑change charges."
+    "Top-up / payment channels recently had a **known issue** affecting some self-service top-ups and payments; advisors should be aware this may explain unexpected behaviour, but the issue is **now resolved** and BAU applies.",
+    "Refund or credit decisions must follow standard (BAU) refund/billing processes, as there is **no special exception process documented** here for duplicate top-up packs."
   ],
   "nextSteps": [
-    "Confirm the previous plan, new plan, and effective date in CRM.",
-    "Compare last bill vs current bill for pro‑rated charges/credits and new plan charges."
+    "Check the customer’s recent top-up history and pack activations to confirm whether two identical packs were purchased and successfully applied, and if this **coincides with the reported self-service issue window**.",
+    "Follow BAU refund/credit assessment and processing for mobile/prepaid where applicable, documenting the situation clearly (double charge, no intent to buy two packs) and whether any system error is suspected."
   ],
-  "suggestedReply": "Thanks for letting me know you’ve changed plans – that’s really helpful. When a plan changes, the first bill afterwards can look higher because it can include part of your old plan, part of your new plan, and any credits or adjustments for the changeover. I’ll pull up your last bill and this month’s bill now and break down exactly what’s different so you can see what’s one‑off for the change and what your regular monthly cost will be going forward.",
+  "suggestedReply": "Thanks for letting us know what’s happened, that does sound frustrating.\n\nI’ll first take a look at your recent top-ups to confirm what was charged and which packs have actually been applied. Once I can see exactly what’s gone through, I’ll review whether we can reverse or credit one of those pack purchases for you and talk you through the options.\n\nI’ll come back to you shortly with what I find and what we can do next.",
   "references": [
     {
-      "title": "Billing — Plan change & pro‑rating (Internal guide)",
-      "url": "https://example.internal/plan-change-billing"
-    },
-    {
-      "title": "Bill Estimator tool",
-      "url": "https://example.internal/bill-estimator"
+      "title": "[RESOLVED] Urgent CSI: Issues with top-ups, bill payments and order submission",
+      "url": "https://www.spark.co.nz/atamai/comms/csi/urgent-csi-prepaid-top-up-issue-for-spark-customers"
     }
   ]
 }
