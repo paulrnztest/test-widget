@@ -8,25 +8,14 @@
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
 
   <style>
-    body {
-      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      margin:16px;
-    }
-
+    body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
     h3 { margin: 0 0 4px 0; }
     h4 { margin-top: 16px; }
     ul { margin: 6px 0 0 18px; }
-
     button { padding:6px 10px; cursor:pointer; }
     textarea { width:100%; box-sizing:border-box; resize:vertical; }
 
-    .badge {
-      background:#e8e8e8;
-      padding:3px 6px;
-      border-radius:6px;
-      font-size:11px;
-    }
-
+    .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
     .muted { color:#666; font-size:12px; }
 
     #msgs {
@@ -49,6 +38,18 @@
 
     #timestamp { margin-left:8px; }
 
+    /* Suggested reply box (renders rich text safely) */
+    #suggestedReplyBox {
+      border:1px solid #ddd;
+      background:#fff;
+      padding:8px;
+      border-radius:4px;
+      white-space:pre-wrap;
+      line-height:1.4;
+      min-height:70px;
+    }
+    #suggestedReplyBox.placeholder { color:#888; }
+
     /* References */
     #referencesToggle { cursor:pointer; user-select:none; }
     #referencesList a { text-decoration:none; }
@@ -58,217 +59,366 @@
 
 <body>
 
-<h3>BRAVO — Agent Assist <span class="badge">preview 1.0.17</span></h3>
-<div class="muted">
-  Real‑time guidance based on the current conversation.  
-  Review before sending — you’re always in control.
-</div>
-
-<div style="margin:8px 0;">
-  Conversation: <b id="convId">(no active conversation)</b>
-</div>
-
-<div style="margin:10px 0;">
-  <button id="btnRefresh">🔄 Refresh suggestions</button>
-  <button id="btnInsert" disabled>Insert suggested reply</button>
-  <span id="timestamp" class="muted"></span>
-</div>
-
-<!-- IDLE / EMPTY STATE -->
-<div id="emptyState" class="assist muted" style="display:none;">
-  <b>No suggestions yet</b>
-  <div style="margin-top:6px;">
-    Click <i>Refresh suggestions</i> to load BRAVO guidance for this conversation.
+  <h3>BRAVO — Agent Assist <span class="badge">preview 1.0.17</span></h3>
+  <div class="muted">
+    Real‑time guidance based on the current conversation.
+    Review before sending — you’re always in control.
   </div>
-</div>
 
-<!-- ASSIST CONTENT -->
-<div class="assist" id="assistContent">
-  <h4>What to keep in mind</h4>
-  <ul id="thingsList"></ul>
-
-  <h4>What to do next</h4>
-  <ul id="stepsList"></ul>
-
-  <h4>Suggested reply <span class="muted">(editable)</span></h4>
-  <textarea id="suggestedReply"
-            rows="4"
-            readonly
-            placeholder="BRAVO suggestions will appear here."></textarea>
-
-  <!-- References -->
-  <div id="referencesSection" class="muted" style="margin-top:10px; display:none;">
-    <div id="referencesToggle">▶ <span id="referencesCount"></span> reference(s)</div>
-    <ul id="referencesList" style="display:none;"></ul>
+  <div style="margin:8px 0;">
+    Conversation: <b id="convId">(no active conversation)</b>
   </div>
-</div>
 
-<h4>Latest customer messages</h4>
-<div id="msgs"></div>
+  <div style="margin:10px 0;">
+    <button id="btnRefresh">🔄 Refresh suggestions</button>
+    <button id="btnInsert" disabled>Insert suggested reply</button>
+    <span id="timestamp" class="muted"></span>
+  </div>
+
+  <!-- IDLE / EMPTY STATE -->
+  <div id="emptyState" class="assist muted" style="display:none;">
+    <b>No suggestions yet</b>
+    <div style="margin-top:6px;">
+      Click <i>Refresh suggestions</i> to load BRAVO guidance for this conversation.
+    </div>
+  </div>
+
+  <!-- ASSIST CONTENT -->
+  <div class="assist" id="assistContent">
+    <h4>Things to keep in mind</h4>
+    <ul id="thingsList"></ul>
+
+    <h4>What to check next</h4>
+    <ul id="stepsList"></ul>
+
+    <h4>Suggested reply <span class="muted">(editable)</span></h4>
+    <div id="suggestedReplyBox" class="placeholder">BRAVO suggestions will appear here.</div>
+
+    <!-- References (collapsed like BRAVO web) -->
+    <div id="referencesSection" class="muted" style="margin-top:10px; display:none;">
+      <div id="referencesToggle">▶ <span id="referencesCount"></span> reference(s)</div>
+      <ul id="referencesList" style="display:none;"></ul>
+    </div>
+  </div>
+
+  <h4>Latest customer messages</h4>
+  <div id="msgs"></div>
 
 <script>
-/* ---------- SDK helpers ---------- */
-async function waitForAgentSDK(ms=8000){
-  const t=Date.now();
-  while(Date.now()-t<ms){
-    if(window.lpTag?.agentSDK) return;
-    await new Promise(r=>setTimeout(r,100));
+/* -------------------------------------------------------
+   Utilities (safe rich text)
+   - escape first, then apply limited formatting tokens
+------------------------------------------------------- */
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/**
+ * Safe rich text renderer:
+ *  **bold** -> <strong>
+ *  *italic* -> <em>
+ *  __underline__ -> <u>
+ *
+ * Everything is escaped first, so only these tags can appear.
+ */
+function formatRichText(raw) {
+  let s = escapeHtml(raw ?? "");
+
+  // underline first (__) to avoid conflicts
+  s = s.replace(/__(.+?)__/g, "<u>$1</u>");
+
+  // bold (**)
+  s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  // italic (*)
+  // keep simple; avoids matching inside HTML tags because < and > are escaped already
+  s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+  return s;
+}
+
+/** Strip formatting tokens for safe plain insertion into composer */
+function stripFormatting(raw) {
+  return String(raw ?? "")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1");
+}
+
+/* -------------------------------------------------------
+   Agent SDK init
+------------------------------------------------------- */
+async function waitForAgentSDK(ms = 8000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (window.lpTag?.agentSDK) return;
+    await new Promise(r => setTimeout(r, 100));
   }
-  throw new Error("Agent SDK not available");
+  throw new Error("Agent SDK not found in iframe.");
 }
 
-let sdkInit=false;
-async function ensureSDK(){
-  if(sdkInit) return;
+let _inited = false;
+async function ensureSDK() {
+  if (_inited) return;
   await waitForAgentSDK();
-  lpTag.agentSDK.init({});
-  sdkInit=true;
+  window.lpTag.agentSDK.init({});
+  _inited = true;
 }
 
-/* ---------- Bind helper ---------- */
-function bindOnce(path){
-  return new Promise(resolve=>{
-    const cb=d=>{
-      try{lpTag.agentSDK.unbind(path,cb);}catch{}
-      resolve(d);
+/* -------------------------------------------------------
+   One‑shot bind helper
+------------------------------------------------------- */
+function bindOnce(path) {
+  return new Promise((resolve) => {
+    const cb = (data) => {
+      try { window.lpTag.agentSDK.unbind(path, cb); } catch {}
+      resolve(data);
     };
-    lpTag.agentSDK.bind(path,cb,()=>resolve(null));
+    window.lpTag.agentSDK.bind(path, cb, () => resolve(null));
   });
 }
 
-/* ---------- Context ---------- */
-async function getConversationId(){
-  const p=await bindOnce("chatTranscript.lines");
-  const l=p?.newValue||[];
-  return l.length?l[l.length-1].dialogId:"";
+/* -------------------------------------------------------
+   Context helpers
+------------------------------------------------------- */
+async function getConversationId() {
+  const payload = await bindOnce("chatTranscript.lines");
+  const lines = payload?.newValue || [];
+  const latest = lines.length ? lines[lines.length - 1] : null;
+  return latest?.dialogId || "";
 }
 
-async function getCustomerMessages(limit=12){
-  const p=await bindOnce("chatTranscript.lines");
-  const l=p?.newValue||[];
-  return l.slice(-limit).map(x=>{
-    const s=(x.source||x.by||"").toLowerCase();
-    if(s.includes("consumer")||s.includes("visitor")||s.includes("customer")){
-      return x.text||x.message||"";
-    }
-    return null;
-  }).filter(Boolean);
+async function getCustomerMessages(limit = 12) {
+  const payload = await bindOnce("chatTranscript.lines");
+  const lines = payload?.newValue || [];
+  if (!Array.isArray(lines)) return [];
+
+  return lines
+    .slice(-limit)
+    .map(line => {
+      const s = (line.source || line.by || "").toString().toLowerCase();
+
+      const isAgent = s.includes("agent");
+      const isBot = s.includes("bot");
+      const isCustomer = s.includes("consumer") || s.includes("visitor") || s.includes("customer");
+
+      // ignore system/controller/manager/etc.
+      if (!isCustomer && !isAgent && !isBot) return null;
+
+      if (isCustomer) return line.text || line.message || "";
+      return null;
+    })
+    .filter(Boolean);
 }
 
-/* ---------- Fake BRAVO ---------- */
-async function fetchFakeBravo(){
-  const r=await fetch("./fake-bravo/default.json",{cache:"no-store"});
-  if(!r.ok) throw new Error("Fake BRAVO unavailable");
-  return r.json();
+/* -------------------------------------------------------
+   Fake BRAVO (static file) camelCase contract:
+     - relevantInfo: string[]
+     - nextSteps: string[]
+     - suggestedReply: string
+     - references: { title: string, url: string }[]
+------------------------------------------------------- */
+async function fetchFakeBravo() {
+  const res = await fetch("./fake-bravo/default.json", { cache: "no-store" });
+  if (!res.ok) throw new Error("Fake BRAVO unavailable");
+  return res.json();
 }
 
-/* ---------- Insert ---------- */
-async function insertReply(text){
-  if(!text) return;
+/* -------------------------------------------------------
+   Insert suggested reply (plain text) using write/writeSC
+   Your tenant exposes cmdNames: write, writeSC. [2](https://developers.liveperson.com/agent-workspace-widget-sdk-methods.html)
+------------------------------------------------------- */
+async function insertReply(rawText) {
   await ensureSDK();
-  const sdk=lpTag.agentSDK;
-  const c=sdk.cmdNames||{};
-  const p={text:text.trim()};
-  const tryCmd=n=>new Promise(res=>sdk.command(n,p,()=>res(true),()=>res(false)));
-  if(c.write && await tryCmd(c.write)) return;
-  if(c.writeSC && await tryCmd(c.writeSC)) return;
+
+  const sdk = lpTag.agentSDK;
+  const c = sdk.cmdNames || {};
+
+  const plain = stripFormatting(rawText).trim();
+  if (!plain) return;
+
+  const payload = { text: plain };
+  const tryCmd = (name) => new Promise(res => sdk.command(name, payload, () => res(true), () => res(false)));
+
+  if (c.write && await tryCmd(c.write)) return;
+  if (c.writeSC && await tryCmd(c.writeSC)) return;
 }
 
-/* ---------- References ---------- */
-function renderReferences(refs){
-  const sec=$("#referencesSection"),tgl=$("#referencesToggle"),
-        cnt=$("#referencesCount"),list=$("#referencesList");
-  if(!Array.isArray(refs)||!refs.length){
-    sec.style.display="none";
+/* -------------------------------------------------------
+   Timestamp
+------------------------------------------------------- */
+function updateTimestamp() {
+  const el = document.getElementById("timestamp");
+  el.textContent = `Last updated ${new Date().toLocaleTimeString()}`;
+}
+
+/* -------------------------------------------------------
+   References UI (collapsed)
+------------------------------------------------------- */
+function renderReferences(refs) {
+  const section = document.getElementById("referencesSection");
+  const toggle  = document.getElementById("referencesToggle");
+  const countEl = document.getElementById("referencesCount");
+  const list    = document.getElementById("referencesList");
+
+  const arr = Array.isArray(refs) ? refs : [];
+  if (!arr.length) {
+    section.style.display = "none";
+    list.style.display = "none";
+    toggle.onclick = null;
     return;
   }
-  cnt.textContent=refs.length;
-  list.innerHTML=refs.map(r=>`<li>${a(r.url)}${e(r.title||r.url)}</a></li>`).join("");
-  sec.style.display="block";
-  list.style.display="none";
-  tgl.innerHTML=`▶ ${refs.length} reference(s)`;
-  tgl.onclick=()=>{
-    const open=list.style.display==="block";
-    list.style.display=open?"none":"block";
-    tgl.innerHTML=`${open?"▶":"▼"} ${refs.length} reference(s)`;
+
+  countEl.textContent = arr.length;
+
+  list.innerHTML = arr.map(r => {
+    const title = r?.title || r?.url || "Reference";
+    const url = r?.url || "#";
+    return `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a></li>`;
+  }).join("");
+
+  section.style.display = "block";
+  list.style.display = "none";
+  toggle.innerHTML = `▶ ${arr.length} reference(s)`;
+
+  toggle.onclick = () => {
+    const open = list.style.display === "block";
+    list.style.display = open ? "none" : "block";
+    toggle.innerHTML = `${open ? "▶" : "▼"} ${arr.length} reference(s)`;
   };
 }
 
-/* ---------- Rendering ---------- */
-const state={convId:"",messages:[],bravo:null};
+/* -------------------------------------------------------
+   State + rendering
+------------------------------------------------------- */
+const state = {
+  convId: "",
+  customerMessages: [],
+  bravo: null,
+  suggestedReplyRaw: ""   // keep raw (with formatting tokens)
+};
 
-const $=s=>document.querySelector(s);
-const e=s=>String(s).replace(/[&<>"]/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[m]));
-const a=u=>`<a href="${e(u)}" target="_blank">`;
+const $ = (sel) => document.querySelector(sel);
 
-function clearUI(){
-  $("#thingsList").innerHTML=`<li class="muted">No guidance available.</li>`;
-  $("#stepsList").innerHTML="";
-  $("#suggestedReply").value="";
+function clearBravoUI() {
+  $("#thingsList").innerHTML = `<li class="muted">No guidance available.</li>`;
+  $("#stepsList").innerHTML = "";
+  state.suggestedReplyRaw = "";
+  const box = $("#suggestedReplyBox");
+  box.classList.add("placeholder");
+  box.textContent = "BRAVO suggestions will appear here.";
   renderReferences([]);
 }
 
-function render(){
-  const connected=!!state.convId;
-  $("#convId").textContent=connected?state.convId:"(no active conversation)";
-  $("#emptyState").style.display=connected && !state.bravo ? "block" : "none";
-  $("#assistContent").style.display=connected ? "block" : "none";
+function renderBravo(bravo) {
+  // lists support rich text tokens safely
+  const relevant = Array.isArray(bravo.relevantInfo) ? bravo.relevantInfo : [];
+  const steps    = Array.isArray(bravo.nextSteps) ? bravo.nextSteps : [];
 
-  $("#msgs").textContent=state.messages.map(m=>`🧑 ${m}`).join("\n");
+  $("#thingsList").innerHTML = relevant.length
+    ? relevant.map(t => `<li>${formatRichText(t)}</li>`).join("")
+    : `<li class="muted">No guidance available.</li>`;
 
-  if(connected && state.bravo){
-    const b=state.bravo;
-    $("#thingsList").innerHTML=(b.relevantInfo||[]).map(x=>`<li>${e(x)}</li>`).join("");
-    $("#stepsList").innerHTML=(b.nextSteps||[]).map(x=>`<li>${e(x)}</li>`).join("");
-    $("#suggestedReply").value=b.suggestedReply||"";
-    renderReferences(b.references||[]);
-  } else if (connected) {
-    clearUI();
+  $("#stepsList").innerHTML = steps.length
+    ? steps.map(s => `<li>${formatRichText(s)}</li>`).join("")
+    : "";
+
+  // suggested reply (render rich text in the box; store raw for insertion)
+  state.suggestedReplyRaw = typeof bravo.suggestedReply === "string" ? bravo.suggestedReply : "";
+  const box = $("#suggestedReplyBox");
+
+  if (state.suggestedReplyRaw.trim()) {
+    box.classList.remove("placeholder");
+    box.innerHTML = formatRichText(state.suggestedReplyRaw);
+  } else {
+    box.classList.add("placeholder");
+    box.textContent = "BRAVO suggestions will appear here.";
   }
 
-  $("#btnInsert").disabled=!connected||!$("#suggestedReply").value;
+  renderReferences(bravo.references || []);
 }
 
-/* ---------- Refresh ---------- */
-async function refresh(){
-  try{
+function render() {
+  const connected = !!state.convId;
+
+  $("#convId").textContent = connected ? state.convId : "(no active conversation)";
+  $("#assistContent").style.display = connected ? "block" : "none";
+
+  // Latest customer messages
+  $("#msgs").textContent = connected
+    ? state.customerMessages.map(m => `🧑 ${m}`).join("\n")
+    : "";
+
+  // Empty state logic
+  $("#emptyState").style.display = (connected && !state.bravo) ? "block" : "none";
+
+  // Apply BRAVO output or clear
+  if (connected && state.bravo) renderBravo(state.bravo);
+  else if (connected) clearBravoUI();
+
+  $("#btnInsert").disabled = !connected || !state.suggestedReplyRaw.trim();
+}
+
+/* -------------------------------------------------------
+   Refresh: get LP context + fetch Fake BRAVO
+------------------------------------------------------- */
+async function refresh() {
+  try {
     await ensureSDK();
-    state.convId=await getConversationId();
-    state.messages=await getCustomerMessages();
-    if(state.convId){
-      try{ state.bravo=await fetchFakeBravo(); }
-      catch{ state.bravo=null; }
-    }else{
-      state.bravo=null;
+
+    state.convId = await getConversationId();
+    state.customerMessages = await getCustomerMessages(12);
+
+    if (state.convId) {
+      try {
+        state.bravo = await fetchFakeBravo();
+      } catch {
+        state.bravo = null;
+      }
+    } else {
+      state.bravo = null;
     }
-    $("#timestamp").textContent=`Last updated ${new Date().toLocaleTimeString()}`;
+
+    updateTimestamp();
     render();
-  }catch(e){console.error(e);}
+  } catch (e) {
+    console.error(e);
+  }
 }
 
-/* ---------- Auto-connect once ---------- */
-let connectedOnce=false;
-async function autoConnect(){
+/* -------------------------------------------------------
+   Auto-connect once: first conversation -> refresh once
+------------------------------------------------------- */
+let connectedOnce = false;
+
+async function autoConnectOnce() {
   await ensureSDK();
-  lpTag.agentSDK.bind("chatTranscript.lines",async d=>{
-    if(connectedOnce) return;
-    const l=d?.newValue||[];
-    if(l.length && reminds(l[l.length-1]?.dialogId)){
-      connectedOnce=true;
+  lpTag.agentSDK.bind("chatTranscript.lines", async (data) => {
+    if (connectedOnce) return;
+    const lines = data?.newValue || [];
+    const latest = lines.length ? lines[lines.length - 1] : null;
+    if (latest?.dialogId) {
+      connectedOnce = true;
       await refresh();
     }
   });
 }
 
-function reminds(x){return!!x;}
+/* -------------------------------------------------------
+   Wire up
+------------------------------------------------------- */
+$("#btnRefresh").onclick = refresh;
+$("#btnInsert").onclick = () => insertReply(state.suggestedReplyRaw);
 
-$("#btnRefresh").onclick=refresh;
-$("#btnInsert").onclick=()=>insertReply($("#suggestedReply").value);
-
+// Initial render (idle)
 render();
-autoConnect();
+autoConnectOnce();
 </script>
 
 </body>
 </html>
-
