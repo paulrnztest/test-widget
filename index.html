@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Example Widget (Probe Spark ID)</title>
+  <title>Example Widget</title>
   <!-- LivePerson Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
   <style>
     body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
     h3 { margin: 0 0 6px 0; }
-    h4 { margin: 14px 0 6px; }
     .muted { color:#666; font-size:12px; }
     .row { margin: 8px 0; }
     button { padding:6px 10px; cursor:pointer; }
@@ -18,57 +17,29 @@
       max-height:260px; overflow:auto; font-size:13px;
       white-space: pre-wrap;
     }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; }
     .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
-    .grid { display:grid; grid-template-columns: 140px 1fr; gap:6px 10px; align-items:baseline; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 12px; }
-    table { border-collapse: collapse; width: 100%; font-size: 13px; }
-    th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
-    th { background: #f3f3f3; text-align: left; }
-    .ok { color: #0a7a0a; font-weight: 600; }
-    .warn { color: #a35a00; font-weight: 600; }
   </style>
 </head>
 <body>
-  <h3>Example Widget <span class="badge">probe 1.5.0</span></h3>
+  <h3>Example Widget <span class="badge">1.4.7</span></h3>
   <div class="muted">
-    Shows transcript lines and <b>logs all likely metadata locations</b> for Spark ID (email) from the Agent Widget public model.
+    Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
   </div>
 
-  <div class="row grid">
-    <b>Conversation ID:</b> <span id="convId">(none)</span>
-    <b>Counts:</b> <span id="counts">(waiting…)</span>
-  </div>
+  <div class="row"><b>Conversation ID:</b> <span id="convId">(none)</span></div>
+  <div class="row"><b>Counts:</b> <span id="counts">(waiting…)</span></div>
 
-  <h4>Candidate Spark ID values (email-like)</h4>
-  <div class="muted">
-    This table is built from probing multiple public model paths (visitorInfo, authenticatedData, SDE, etc.). [1](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
-  </div>
-  <div class="row">
-    <button id="btnProbe">🔎 Probe metadata now</button>
-    <span id="probeStatus" class="muted"></span>
-  </div>
-  <div class="row">
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 280px;">Model path</th>
-          <th style="width: 180px;">Field/label</th>
-          <th>Value (email-like)</th>
-        </tr>
-      </thead>
-      <tbody id="candidatesBody">
-        <tr><td colspan="3" class="muted">(no probe run yet)</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <!-- ✅ Minimal Spark ID display (additive only) -->
+  <div class="row"><b>Spark ID:</b> <span id="sparkId">(not available)</span></div>
+  <div class="row muted"><b>Source:</b> <span id="sparkIdSource">(n/a)</span></div>
+  <div class="row muted" id="sparkIdNote"></div>
 
-  <h4>Latest conversation lines (raw source)</h4>
+  <h4>Latest conversation lines (raw → simplified)</h4>
   <pre id="lines">(waiting for conversation…)</pre>
 
   <h4>Draft reply (editable)</h4>
-  <div class="muted">
-    Type anything here, then click “Insert into reply box”. This inserts plain text (formatting stripped) into the LivePerson composer.
-  </div>
+  <div class="muted">Type anything here, then click “Insert into reply box”. This inserts plain text (formatting stripped) into the LivePerson composer.</div>
   <div class="row">
     <textarea id="draft" rows="5" placeholder="Type a draft reply…"></textarea>
   </div>
@@ -112,11 +83,8 @@ function bindOnce(path, timeoutMs = 2000) {
       resolve(data);
     };
 
-    try {
-      sdk.bind(path, cb, () => {});
-    } catch {
-      return resolve(null);
-    }
+    try { sdk.bind(path, cb, () => {}); }
+    catch { return resolve(null); }
 
     setTimeout(() => {
       if (done) return;
@@ -147,81 +115,50 @@ function simplifyLine(line) {
     dialogId: line?.dialogId || ""
   };
 }
+
+/* -------------------------------------------------------
+  ✅ Minimal Spark ID resolver (confirmed paths only)
+  Uses public model areas: authenticatedData + claimsAndAuthType [2](https://www.xjavascript.com/blog/access-to-fetch-at-from-origin-has-been-blocked-by-cors-policy-no-access-control-allow-origin/)
+------------------------------------------------------- */
 function looksLikeEmail(s) {
   return typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
 
-/**
- * Walk any value and collect email-like strings.
- * Returns array of { label, value } where label is a best-effort "field name".
- */
-function collectEmailsDeep(value, labelPrefix = "") {
-  const out = [];
+async function resolveSparkIdConfirmed() {
+  // 1) authenticatedData.personalInfo.contactInfo[0].email
+  const pi = await bindOnce("authenticatedData.personalInfo");
+  const personalInfo = pi?.newValue;
+  const email1 = personalInfo?.contactInfo?.[0]?.email;
+  if (looksLikeEmail(email1)) {
+    return {
+      sparkId: email1.trim(),
+      source: "authenticatedData.personalInfo.contactInfo[0].email"
+    };
+  }
 
-  const seen = new WeakSet();
-  const visit = (v, path) => {
-    if (looksLikeEmail(v)) {
-      out.push({ label: path || labelPrefix || "(value)", value: v.trim() });
-      return;
-    }
-    if (!v) return;
-    if (typeof v !== "object") return;
+  // 2) claimsAndAuthType.claims.lp_sdes[*].personal.contacts[0].email
+  const claimsResp = await bindOnce("claimsAndAuthType.claims");
+  const claims = claimsResp?.newValue;
+  const lpSdes = claims?.lp_sdes;
 
-    if (seen.has(v)) return;
-    seen.add(v);
-
-    if (Array.isArray(v)) {
-      v.forEach((item, idx) => visit(item, `${path}[${idx}]`));
-      return;
-    }
-
-    for (const [k, vv] of Object.entries(v)) {
-      const nextPath = path ? `${path}.${k}` : k;
-      visit(vv, nextPath);
-    }
-  };
-
-  visit(value, labelPrefix);
-  return out;
-}
-
-/**
- * Heuristic for “Personal info → Email address” style arrays:
- * look for objects with displayName/name/key containing “email”.
- */
-function collectEmailsFromLabeledArray(arr, labelFieldCandidates = ["displayName","name","key","type"], valueFieldCandidates = ["value","email","val"]) {
-  const out = [];
-  if (!Array.isArray(arr)) return out;
-
-  for (const item of arr) {
-    const label =
-      labelFieldCandidates
-        .map(k => item?.[k])
-        .find(v => typeof v === "string" && v.length) || "";
-
-    const labelLower = label.toLowerCase();
-
-    // prefer items that look like "Email address"
-    const isEmailLabel = labelLower.includes("email") || labelLower.includes("mail");
-
-    const values = [];
-    for (const k of valueFieldCandidates) values.push(item?.[k]);
-    values.push(item?.data?.value, item?.data?.email);
-
-    for (const v of values) {
-      if (looksLikeEmail(v)) {
-        out.push({ label: label || "(email field)", value: v.trim(), preferred: isEmailLabel });
+  if (Array.isArray(lpSdes)) {
+    for (let i = 0; i < lpSdes.length; i++) {
+      const email2 = lpSdes?.[i]?.personal?.contacts?.[0]?.email;
+      if (looksLikeEmail(email2)) {
+        return {
+          sparkId: email2.trim(),
+          source: `claimsAndAuthType.claims.lp_sdes[${i}].personal.contacts[0].email`
+        };
       }
     }
   }
 
-  // sort so email-labeled items float to top
-  out.sort((a,b) => (b.preferred?1:0) - (a.preferred?1:0));
-  return out.map(({label,value}) => ({label,value}));
+  return { sparkId: null, source: null };
 }
 
 /* -------------------------------------------------------
-  Insert reply (KEEP EXISTING LOGIC: write first, then writeSC)
+  Insert reply using Agent SDK command
+  (KEEP EXISTING LOGIC: write first, then writeSC)
 ------------------------------------------------------- */
 async function insertReply(rawText) {
   await ensureSDK();
@@ -243,17 +180,27 @@ async function insertReply(rawText) {
 }
 
 /* -------------------------------------------------------
-  State + render
+  Bind to conversation transcript
 ------------------------------------------------------- */
 const state = {
   convId: "",
-  lines: []
+  lines: [],
+  // ✅ additive only
+  sparkId: null,
+  sparkIdSource: null,
+  sparkIdNote: ""
 };
 
 function render() {
   document.getElementById("convId").textContent = state.convId || "(none)";
   document.getElementById("counts").textContent = `total=${state.lines.length}`;
 
+  // Spark ID UI
+  document.getElementById("sparkId").textContent = state.sparkId || "(not available)";
+  document.getElementById("sparkIdSource").textContent = state.sparkIdSource || "(n/a)";
+  document.getElementById("sparkIdNote").textContent = state.sparkIdNote || "";
+
+  // Transcript output (raw source)
   const simplified = state.lines.map(simplifyLine);
   const tail = simplified.slice(-25);
   const lastRaw = state.lines.length ? state.lines[state.lines.length - 1] : null;
@@ -271,134 +218,64 @@ function render() {
 
   document.getElementById("lines").textContent = output;
 
+  // Enable insert button only when there is an active conversation AND draft has text
   const draft = document.getElementById("draft").value.trim();
   document.getElementById("btnInsert").disabled = !(state.convId && draft);
 }
 
 /* -------------------------------------------------------
-  Metadata probe: bindOnce on many likely paths + log raw
-  Public model paths based on LP doc structure. [1](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
+  ✅ Spark ID refresh (non-blocking; does not alter existing logic)
 ------------------------------------------------------- */
-const PROBE_PATHS = [
-  // Visitor info
-  "visitorInfo.visitorName",
-  "visitorInfo.visitorId",
-  "visitorInfo.visitorSso",
+let _sparkLookupInFlight = false;
 
-  // Authenticated data
-  "authenticatedData.customerDetails",
-  "authenticatedData.personalInfo",
+async function refreshSparkIdIfNeeded() {
+  // only attempt if a conversation is present
+  if (!state.convId) return;
+  if (_sparkLookupInFlight) return;
 
-  // SDE + authenticatedData (both are in the public model doc)
-  "SDE.customerDetails",
-  "SDE.personalInfo",
-
-  // Claims/auth type sometimes includes identifiers
-  "claimsAndAuthType.claims",
-  "claimsAndAuthType.acr",
-
-  // Survey/prechat sometimes holds email (less likely for in-app but worth logging)
-  "surveyQuestions.preChat.email.value",
-  "surveyQuestions.preChat.email",
-  "surveyQuestions.preChat.name.value",
-
-  // Engagement info sometimes contains skill/notes; not Spark ID but useful context
-  "engagementInfo.agentNote",
-  "engagementInfo.skill"
-];
-
-function renderCandidates(candidates) {
-  const tbody = document.getElementById("candidatesBody");
-  if (!candidates.length) {
-    tbody.innerHTML = `<tr><td colspan="3" class="muted">(no email-like values found in probed paths)</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = candidates.map(c => `
-    <tr>
-      <td><code>${c.path}</code></td>
-      <td><code>${c.label || ""}</code></td>
-      <td>${c.value}</td>
-    </tr>
-  `).join("");
-}
-
-async function probeMetadata() {
-  const status = document.getElementById("probeStatus");
-  status.textContent = "Probing… (check console for raw payloads)";
-  const candidates = [];
-
-  for (const path of PROBE_PATHS) {
-    let data = null;
-    try {
-      data = await bindOnce(path, 1500);
-    } catch (e) {
-      console.warn("[Probe] bindOnce error", path, e);
-    }
-
-    // Always log raw to console to remove ambiguity
-    console.log(`[Probe RAW] ${path}:`, data?.newValue);
-
-    const value = data?.newValue;
-
-    // If the value is an array of labeled fields (e.g. Personal info), do a label-aware extraction first
-    if (Array.isArray(value)) {
-      const labeled = collectEmailsFromLabeledArray(value);
-      labeled.forEach(x => candidates.push({ path, label: x.label, value: x.value }));
-    }
-
-    // Then do a deep scan for any email-like strings anywhere inside
-    const deep = collectEmailsDeep(value, "(root)");
-    deep.forEach(x => candidates.push({ path, label: x.label, value: x.value }));
-  }
-
-  // De-dupe identical (path + value)
-  const uniq = [];
-  const seen = new Set();
-  for (const c of candidates) {
-    const key = `${c.path}||${c.value}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    uniq.push(c);
-  }
-
-  // Prefer items where label contains "email"
-  uniq.sort((a,b) => {
-    const ae = (a.label||"").toLowerCase().includes("email") ? 1 : 0;
-    const be = (b.label||"").toLowerCase().includes("email") ? 1 : 0;
-    return be - ae;
-  });
-
-  renderCandidates(uniq);
-
-  status.textContent = uniq.length
-    ? `Done. Found ${uniq.length} email-like value(s).`
-    : "Done. No email-like values found in the probed paths.";
-
-  // Helpful hint if visitorSso is true but no email was found
+  _sparkLookupInFlight = true;
   try {
-    const sso = await bindOnce("visitorInfo.visitorSso", 800);
-    const isSso = !!sso?.newValue;
-    if (isSso && !uniq.length) {
-      console.warn("[Probe] visitorInfo.visitorSso=true but no email-like values found. The email may be present in a different model path or in non-public UI-only metadata.");
+    const res = await resolveSparkIdConfirmed();
+    if (res.sparkId) {
+      state.sparkId = res.sparkId;
+      state.sparkIdSource = res.source;
+      state.sparkIdNote = "Spark ID resolved from confirmed metadata paths.";
+    } else {
+      state.sparkId = null;
+      state.sparkIdSource = null;
+      state.sparkIdNote = "Spark ID not found in confirmed paths (may not be present for this channel/conversation).";
     }
-  } catch {}
+    render();
+  } catch (e) {
+    console.error("[SparkID] resolve failed", e);
+    state.sparkId = null;
+    state.sparkIdSource = null;
+    state.sparkIdNote = "Spark ID lookup failed (see console).";
+    render();
+  } finally {
+    _sparkLookupInFlight = false;
+  }
 }
 
-/* -------------------------------------------------------
-  Start
-------------------------------------------------------- */
 async function start() {
   await ensureSDK();
 
-  // Bind transcript lines (unchanged logic)
-  lpTag.agentSDK.bind("chatTranscript.lines", data => {
+  // Bind to transcript lines; LivePerson pushes updates when conversation changes
+  lpTag.agentSDK.bind("chatTranscript.lines", async (data) => {
     const lines = data?.newValue || [];
     state.lines = Array.isArray(lines) ? lines : [];
+
+    // Derive conversation ID from last line dialogId (UNCHANGED)
     const latest = state.lines.length ? state.lines[state.lines.length - 1] : null;
     state.convId = latest?.dialogId || "";
+
     render();
+
+    // ✅ Additive only: try to resolve Spark ID after transcript update
+    refreshSparkIdIfNeeded();
   });
 
+  // UI handlers
   document.getElementById("draft").addEventListener("input", render);
 
   document.getElementById("btnInsert").onclick = async () => {
@@ -413,8 +290,6 @@ async function start() {
       status.textContent = "Insert failed (see console).";
     }
   };
-
-  document.getElementById("btnProbe").onclick = probeMetadata;
 
   render();
 }
