@@ -505,7 +505,7 @@ const msalConfig = {
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 
 const tokenRequest = {
-  scopes: ["api://33bf39e1-6a55-45a3-ac7a-a2c4e96c10e0/test.read"]
+  scopes: ["openid", "profile"]
 };
 
 async function testEntraAuth() {
@@ -548,6 +548,7 @@ autoConnectOnce();
 </script>
 </body>
 </html>
+
 
 
 
