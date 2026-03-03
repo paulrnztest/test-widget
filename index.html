@@ -23,19 +23,14 @@
 </head>
 <body>
   <h3>Example Widget <span class="badge">1.4.7</span></h3>
-  <div class="muted">
-    Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
-  </div>
 
   <div class="row"><b>Conversation ID:</b> <span id="convId">(none)</span></div>
   <div class="row"><b>Transcript lines count:</b> <span id="counts">(waiting…)</span></div>
 
-  <!-- ✅ Minimal Spark ID display (additive only) -->
   <div class="row"><b>Spark ID:</b> <span id="sparkId">(not available)</span></div>
   <div class="row muted"><b>Source:</b> <span id="sparkIdSource">(n/a)</span></div>
-  <div class="row muted" id="sparkIdNote"></div>
 
-  <h4>Latest conversation lines (raw → simplified)</h4>
+  <h4>Latest conversation lines</h4>
   <pre id="lines">(waiting for conversation…)</pre>
 
   <h4>Draft reply (editable)</h4>
@@ -117,8 +112,7 @@ function simplifyLine(line) {
 }
 
 /* -------------------------------------------------------
-  ✅ Minimal Spark ID resolver (confirmed paths only)
-  Uses public model areas: authenticatedData + claimsAndAuthType [2](https://www.xjavascript.com/blog/access-to-fetch-at-from-origin-has-been-blocked-by-cors-policy-no-access-control-allow-origin/)
+  Spark ID resolver
 ------------------------------------------------------- */
 function looksLikeEmail(s) {
   return typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -157,8 +151,7 @@ async function resolveSparkIdConfirmed() {
 }
 
 /* -------------------------------------------------------
-  Insert reply using Agent SDK command
-  (KEEP EXISTING LOGIC: write first, then writeSC)
+  Insert reply
 ------------------------------------------------------- */
 async function insertReply(rawText) {
   await ensureSDK();
@@ -185,7 +178,6 @@ async function insertReply(rawText) {
 const state = {
   convId: "",
   lines: [],
-  // ✅ additive only
   sparkId: null,
   sparkIdSource: null,
   sparkIdNote: ""
@@ -195,12 +187,12 @@ function render() {
   document.getElementById("convId").textContent = state.convId || "(none)";
   document.getElementById("counts").textContent = `${state.lines.length}`;
 
-  // Spark ID UI
+  // Spark ID
   document.getElementById("sparkId").textContent = state.sparkId || "(not available)";
   document.getElementById("sparkIdSource").textContent = state.sparkIdSource || "(n/a)";
   document.getElementById("sparkIdNote").textContent = state.sparkIdNote || "";
 
-  // Transcript output (raw source)
+  // Transcript
   const simplified = state.lines.map(simplifyLine);
   const tail = simplified.slice(-25);
   const lastRaw = state.lines.length ? state.lines[state.lines.length - 1] : null;
@@ -224,7 +216,7 @@ function render() {
 }
 
 /* -------------------------------------------------------
-  ✅ Spark ID refresh (non-blocking; does not alter existing logic)
+  Spark ID refresh
 ------------------------------------------------------- */
 let _sparkLookupInFlight = false;
 
@@ -302,4 +294,5 @@ start().catch(err => {
 </script>
 </body>
 </html>
+
 
