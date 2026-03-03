@@ -492,8 +492,8 @@ async function autoConnectOnce() {
 
 const msalConfig = {
   auth: {
-    clientId: "PASTE_CLIENT_ID_HERE",
-    authority: "https://login.microsoftonline.com/PASTE_TENANT_ID_HERE",
+    clientId: "33bf39e1-6a55-45a3-ac7a-a2c4e96c10e0",
+    authority: "https://login.microsoftonline.com/f6b3cec6-a862-4a40-9ab4-00d6e11e6f0f",
     redirectUri: window.location.href
   },
   cache: {
@@ -505,7 +505,7 @@ const msalConfig = {
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 
 const tokenRequest = {
-  scopes: ["api://PASTE_CLIENT_ID_HERE/test.read"]
+  scopes: ["api://33bf39e1-6a55-45a3-ac7a-a2c4e96c10e0/test.read"]
 };
 
 async function testEntraAuth() {
@@ -548,5 +548,6 @@ autoConnectOnce();
 </script>
 </body>
 </html>
+
 
 
