@@ -224,6 +224,9 @@ async function getCustomerMessages(limit = 12) {
      - references: { title: string, url: string }[]
 ------------------------------------------------------- */
 
+// DEMO ONLY – token broker replaces this
+const DEMO_ACCESS_TOKEN = "eyJraWQiOiJhcHBqd3QtMTMtMDUtMTciLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI1NDUyMzc3MCIsImF6cCI6ImQ4ZmNjMDkwLTI0NzgtNGU5My05NTM1LTVlZTA2ODM3MGQxZCIsInNjb3BlIjoiZmFhcy5sYW1iZGEuaW52b2tlIiwiaXNzIjoiU2VudGluZWwiLCJleHAiOjE3NzI1MDEwMDIsImlhdCI6MTc3MjQ5NzQwMn0.i1ZW6CJUE-YrwIP6AtPAPkJgqj3cT6JWgoWwkpize46OyOrvPTA3o55qKpefCyyTlhUqu8v3-horP7yiSECHkhYJTHbJryyVPGfrwWbioCnfCw2iK2mHMPPIDIiUe1zrZlaJUP7WlE2k00QTClUwf6BLlIw8AK32OARKInp538KPORNLg0ehr7pM84DrJT9J0xzndFJNovJJLmRc74jLx26oi1w7Y2K3qT2FsN8wv1frxBiqvQyC15iWSOlegIyuyjkkX43KL2Y0-61UgwyTJvjRcffbCq1lQCAmoxzrfGHmqVBrP-yJwXQlUoSk3y8eUoPesKI_vXbq0P6o94-RfQ";
+  
 const FAAS_INVOKE_URL =
   "https://ause1.fninvocations.liveperson.net/api/account/54523770/lambdas/28d32d47-8a8f-441a-a36b-7cd59382f51f/invoke?userId=1276314470";
 
@@ -469,6 +472,7 @@ autoConnectOnce();
 
 </body>
 </html>
+
 
 
 
