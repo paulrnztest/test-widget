@@ -5,6 +5,7 @@
   <title>BRAVO — Agent Assist (PoC)</title>
   <!-- LivePerson Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
+  <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
   <style>
     body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
     h3 { margin: 0 0 4px 0; }
@@ -51,7 +52,7 @@
   </style>
 </head>
 <body>
-  <h3>BRAVO — Agent Assist <span class="badge">preview 1.2.1</span></h3>
+  <h3>BRAVO — Agent Assist <span class="badge">preview 1.3.1</span></h3>
   <div class="muted">
     Real‑time guidance based on the current conversation.
     Review before sending — you’re always in control.
@@ -484,11 +485,62 @@ async function autoConnectOnce() {
     }
   });
 }
+  
+// ===============================
+// Entra Viability Test
+// ===============================
+
+const msalConfig = {
+  auth: {
+    clientId: "PASTE_CLIENT_ID_HERE",
+    authority: "https://login.microsoftonline.com/PASTE_TENANT_ID_HERE",
+    redirectUri: window.location.href
+  },
+  cache: {
+    cacheLocation: "sessionStorage",
+    storeAuthStateInCookie: false
+  }
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+const tokenRequest = {
+  scopes: ["api://PASTE_CLIENT_ID_HERE/test.read"]
+};
+
+async function testEntraAuth() {
+  console.log("[ENTRA] Starting viability test");
+
+  const accounts = msalInstance.getAllAccounts();
+
+  if (!accounts.length) {
+    console.log("[ENTRA] No cached account — invoking popup login");
+    const loginResult = await msalInstance.loginPopup(tokenRequest);
+    msalInstance.setActiveAccount(loginResult.account);
+  } else {
+    console.log("[ENTRA] Using cached account");
+    msalInstance.setActiveAccount(accounts[0]);
+  }
+
+  try {
+    console.log("[ENTRA] Attempting silent token acquisition");
+    const token = await msalInstance.acquireTokenSilent(tokenRequest);
+    console.log("✅ [ENTRA] Silent token acquired", token);
+    alert("✅ Entra token acquired silently. Check console.");
+    return token;
+  } catch (e) {
+    console.warn("[ENTRA] Silent failed, trying popup", e);
+    const token = await msalInstance.acquireTokenPopup(tokenRequest);
+    console.log("✅ [ENTRA] Popup token acquired", token);
+    alert("✅ Entra token acquired via popup. Check console.");
+    return token;
+  }
+}
 
 /* -------------------------------------------------------
   Wire up
 ------------------------------------------------------- */
-$("#btnRefresh").onclick = refresh;
+$("#btnRefresh").onclick = testEntraAuth;
 $("#btnInsert").onclick = () => insertReply(state.suggestedReplyRaw);
 
 render();
@@ -496,4 +548,5 @@ autoConnectOnce();
 </script>
 </body>
 </html>
+
 
