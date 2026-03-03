@@ -24,7 +24,7 @@
 </head>
 
 <body>
-  <h3>Example Widget <span class="badge">1.4.1</span></h3>
+  <h3>Example Widget <span class="badge">1.4.2</span></h3>
   <div class="muted">
     Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
   </div>
@@ -82,17 +82,12 @@ function safeJson(obj) {
   catch { return String(obj); }
 }
 
-function classifyLine(line) {
-  const source = (line?.source || line?.by || "").toString().toLowerCase();
-  const text = line?.text || line?.message || "";
-  const dialogId = line?.dialogId || "";
-
-  let who = "other";
-  if (source.includes("consumer") || source.includes("visitor") || source.includes("customer")) who = "customer";
-  else if (source.includes("agent")) who = "agent";
-  else if (source.includes("bot")) who = "bot";
-
-  return { who, source, text, dialogId };
+function simplifyLine(line) {
+  return {
+    source: line?.source || line?.by || "(unknown)",
+    text: line?.text || line?.message || "",
+    dialogId: line?.dialogId || ""
+  };
 }
 
 /* -------------------------------------------------------
@@ -145,16 +140,19 @@ function render() {
     `customer=${counts.customer}, agent=${counts.agent}, bot=${counts.bot}, other=${counts.other}, total=${state.lines.length}`;
 
   // Show a compact view: latest 25 simplified lines + raw metadata for last line
+  const simplified = state.lines.map(simplifyLine);
   const tail = simplified.slice(-25);
   const lastRaw = state.lines.length ? state.lines[state.lines.length - 1] : null;
 
   const output =
-    `# Simplified (last ${tail.length} lines)\n` +
-    tail.map(x => {
-      const icon = x.who === "customer" ? "🧑" : x.who === "agent" ? "🧑‍💼" : x.who === "bot" ? "🤖" : "•";
-      const snippet = (x.text || "").toString().replace(/\s+/g, " ").trim();
-      return `${icon} [${x.who}] ${snippet}`;
-    }).join("\n") +
+  simplified.slice(-25).map(l => {
+    const snippet = (l.text || "")
+      .toString()
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return `[${l.source}] ${snippet}`;
+  }).join("\n") +
     `\n\n# Last raw line (debug)\n` +
     safeJson(lastRaw);
 
@@ -207,3 +205,4 @@ start().catch(err => {
 </script>
 </body>
 </html>
+
