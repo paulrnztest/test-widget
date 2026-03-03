@@ -3,10 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <title>BRAVO — Agent Assist (PoC)</title>
-
   <!-- LivePerson Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
-
   <style>
     body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
     h3 { margin: 0 0 4px 0; }
@@ -14,10 +12,8 @@
     ul { margin: 6px 0 0 18px; }
     button { padding:6px 10px; cursor:pointer; }
     textarea { width:100%; box-sizing:border-box; resize:vertical; }
-
     .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
     .muted { color:#666; font-size:12px; }
-
     #msgs {
       white-space: pre-wrap;
       border:1px solid #ddd;
@@ -28,14 +24,12 @@
       margin-top:6px;
       font-size:13px;
     }
-
     .assist {
       background:#f7f9fc;
       padding:10px;
       border-left:3px solid #6b8cff;
       margin-top:14px;
     }
-
     #timestamp { margin-left:8px; }
 
     /* Suggested reply box (renders rich text safely) */
@@ -56,10 +50,8 @@
     #referencesList a:hover { text-decoration:underline; }
   </style>
 </head>
-
 <body>
-
-  <h3>BRAVO — Agent Assist <span class="badge">preview 1.1.4</span></h3>
+  <h3>BRAVO — Agent Assist <span class="badge">preview 1.2.1</span></h3>
   <div class="muted">
     Real‑time guidance based on the current conversation.
     Review before sending — you’re always in control.
@@ -106,8 +98,7 @@
 
 <script>
 /* -------------------------------------------------------
-   Utilities (safe rich text)
-   - escape first, then apply limited formatting tokens
+  Utilities (safe rich text)
 ------------------------------------------------------- */
 function escapeHtml(str) {
   return String(str ?? "")
@@ -115,43 +106,49 @@ function escapeHtml(str) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("'", "&#39;");
 }
-
 /**
  * Safe rich text renderer:
- *  **bold** -> <strong>
- *  *italic* -> <em>
- *  __underline__ -> <u>
- *
+ * **bold** -> <strong>
+ * *italic* -> <em>
+ * __underline__ -> <u>
  * Everything is escaped first, so only these tags can appear.
  */
 function formatRichText(raw) {
   let s = escapeHtml(raw ?? "");
-
-  // underline first (__) to avoid conflicts
-  s = s.replace(/__(.+?)__/g, "<u>$1</u>");
-
-  // bold (**)
+  s = s.replace(/\_\_(.+?)\_\_/g, "<u>$1</u>");
   s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-  // italic (*)
-  // keep simple; avoids matching inside HTML tags because < and > are escaped already
   s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
-
   return s;
 }
-
 /** Strip formatting tokens for safe plain insertion into composer */
 function stripFormatting(raw) {
   return String(raw ?? "")
-    .replace(/__(.+?)__/g, "$1")
+    .replace(/\_\_(.+?)\_\_/g, "$1")
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/\*(.+?)\*/g, "$1");
 }
 
 /* -------------------------------------------------------
-   Agent SDK init
+  Base64 helpers (safe for unicode)
+------------------------------------------------------- */
+function base64EncodeJson(obj) {
+  const json = JSON.stringify(obj ?? {});
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary);
+}
+function base64DecodeJson(b64) {
+  const binary = atob(String(b64 || ""));
+  const bytes = new Uint8Array([...binary].map(ch => ch.charCodeAt(0)));
+  const json = new TextDecoder().decode(bytes);
+  return JSON.parse(json);
+}
+
+/* -------------------------------------------------------
+  Agent SDK init
 ------------------------------------------------------- */
 async function waitForAgentSDK(ms = 8000) {
   const t0 = Date.now();
@@ -161,7 +158,6 @@ async function waitForAgentSDK(ms = 8000) {
   }
   throw new Error("Agent SDK not found in iframe.");
 }
-
 let _inited = false;
 async function ensureSDK() {
   if (_inited) return;
@@ -171,7 +167,7 @@ async function ensureSDK() {
 }
 
 /* -------------------------------------------------------
-   One‑shot bind helper
+  One‑shot bind helper
 ------------------------------------------------------- */
 function bindOnce(path) {
   return new Promise((resolve) => {
@@ -184,7 +180,7 @@ function bindOnce(path) {
 }
 
 /* -------------------------------------------------------
-   Context helpers
+  Context helpers
 ------------------------------------------------------- */
 async function getConversationId() {
   const payload = await bindOnce("chatTranscript.lines");
@@ -192,24 +188,18 @@ async function getConversationId() {
   const latest = lines.length ? lines[lines.length - 1] : null;
   return latest?.dialogId || "";
 }
-
 async function getCustomerMessages(limit = 12) {
   const payload = await bindOnce("chatTranscript.lines");
   const lines = payload?.newValue || [];
   if (!Array.isArray(lines)) return [];
-
   return lines
     .slice(-limit)
     .map(line => {
       const s = (line.source || line.by || "").toString().toLowerCase();
-
       const isAgent = s.includes("agent");
       const isBot = s.includes("bot");
       const isCustomer = s.includes("consumer") || s.includes("visitor") || s.includes("customer");
-
-      // ignore system/controller/manager/etc.
       if (!isCustomer && !isAgent && !isBot) return null;
-
       if (isCustomer) return line.text || line.message || "";
       return null;
     })
@@ -217,75 +207,112 @@ async function getCustomerMessages(limit = 12) {
 }
 
 /* -------------------------------------------------------
-   Fetch insights via FaaS
+  Conversational Command approach (LP-only path)
 ------------------------------------------------------- */
+// Set this to the exact command/function name you created in LP (including leading slash)
+const BRAVO_COMMAND = "/bravoSuggest";
+// Function return should be: "BRAVO_RESULT:<base64-json>"
+const RESULT_PREFIX = "BRAVO_RESULT:";
 
-// DEMO ONLY – token broker replaces this
-const DEMO_ACCESS_TOKEN = "eyJraWQiOiJhcHBqd3QtMTMtMDUtMTciLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI1NDUyMzc3MCIsImF6cCI6ImQ4ZmNjMDkwLTI0NzgtNGU5My05NTM1LTVlZTA2ODM3MGQxZCIsInNjb3BlIjoiZmFhcy5sYW1iZGEuaW52b2tlIiwiaXNzIjoiU2VudGluZWwiLCJleHAiOjE3NzI1MDEwMDIsImlhdCI6MTc3MjQ5NzQwMn0.i1ZW6CJUE-YrwIP6AtPAPkJgqj3cT6JWgoWwkpize46OyOrvPTA3o55qKpefCyyTlhUqu8v3-horP7yiSECHkhYJTHbJryyVPGfrwWbioCnfCw2iK2mHMPPIDIiUe1zrZlaJUP7WlE2k00QTClUwf6BLlIw8AK32OARKInp538KPORNLg0ehr7pM84DrJT9J0xzndFJNovJJLmRc74jLx26oi1w7Y2K3qT2FsN8wv1frxBiqvQyC15iWSOlegIyuyjkkX43KL2Y0-61UgwyTJvjRcffbCq1lQCAmoxzrfGHmqVBrP-yJwXQlUoSk3y8eUoPesKI_vXbq0P6o94-RfQ";
-  
-const FAAS_INVOKE_URL =
-  "https://ause1.fninvocations.liveperson.net/api/account/54523770/lambdas/28d32d47-8a8f-441a-a36b-7cd59382f51f/invoke?userId=1276314470";
+/**
+ * Sends text into Agent Workspace using SDK commands.
+ * Tries writeSC first (preferred), then write. [2](https://sparknz-my.sharepoint.com/personal/t815360_spark_co_nz/Documents/Microsoft%20Copilot%20Chat%20Files/idlePrompt.txt?web=1)
+ */
+async function sendToAgentInputOrChat(text) {
+  await ensureSDK();
+  const sdk = lpTag.agentSDK;
+  const c = sdk.cmdNames || {};
+  const payload = { text: String(text || "") };
 
-async function fetchInsightsViaFaas({ conversationId, messages }) {
+  const tryCmd = (name) =>
+    new Promise((resolve) =>
+      sdk.command(name, payload, () => resolve(true), () => resolve(false))
+    );
 
-  // DEBUG
-  console.log("BRAVO: about to invoke FaaS");
-  
-  const res = await fetch(FAAS_INVOKE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${DEMO_ACCESS_TOKEN}`
-    },
-    body: JSON.stringify({
-      timestamp: Date.now(),
-      headers: [],
-      payload: {
-        conversationId,
-        messages,
-        mode: "suggestions"
+  if (c.writeSC && await tryCmd(c.writeSC)) return "writeSC";
+  if (c.write && await tryCmd(c.write)) return "write";
+  throw new Error("No supported cmdNames.write/writeSC available in this tenant.");
+}
+
+/**
+ * Poll chatTranscript.lines looking for a BRAVO_RESULT line.
+ * NOTE: Depending on LP tenant/version, the command return might not appear in chatTranscript.lines.
+ * If it doesn't appear, we will time out and surface a helpful error.
+ */
+async function waitForBravoResult({ maxAttempts = 16, delayMs = 250 } = {}) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const payload = await bindOnce("chatTranscript.lines");
+    const lines = payload?.newValue || [];
+    for (let j = lines.length - 1; j >= 0; j--) {
+      const text = (lines[j]?.text || lines[j]?.message || "").toString();
+      if (text.startsWith(RESULT_PREFIX)) {
+        const b64 = text.slice(RESULT_PREFIX.length).trim();
+        const decoded = base64DecodeJson(b64);
+        return decoded;
       }
-    })
+    }
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  return null;
+}
+
+/**
+ * Replaces external invocation fetch(). Instead:
+ * - encodes {conversationId, messages, mode} as base64
+ * - runs /bravoSuggest <arg>
+ * - waits for BRAVO_RESULT:<base64-json> to show up
+ */
+async function fetchInsightsViaCommand({ conversationId, messages }) {
+  console.log("[BRAVO] about to invoke via conversational command");
+
+  const arg = base64EncodeJson({
+    conversationId,
+    messages: Array.isArray(messages) ? messages : [],
+    mode: "suggestions",
+    ts: Date.now()
   });
 
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Invoke failed ${res.status}: ${t}`);
-  }
+  const cmdText = `${BRAVO_COMMAND} ${arg}`;
 
-  const faas = await res.json();
+  const used = await sendToAgentInputOrChat(cmdText);
+  console.log(`[BRAVO] command sent via ${used}:`, BRAVO_COMMAND);
+
+  // Try to capture the returned payload if your function returns BRAVO_RESULT:<b64>
+  const result = await waitForBravoResult();
+  if (!result) {
+    throw new Error(
+      "Command invoked but no BRAVO_RESULT was detected in chatTranscript.lines. " +
+      "For this widget to auto-render results, have the function return a string like " +
+      `"${RESULT_PREFIX}<base64-json>" (agent-private). Otherwise, confirm the command response is visible in Agent Workspace.`
+    );
+  }
 
   // Map function output → widget contract
   return {
-    relevantInfo: faas.thingsToKeepInMind || [],
-    nextSteps: faas.whatToCheckNext || [],
-    suggestedReply: faas.suggestedReply || "",
-    references: faas.references || []
+    relevantInfo: result.relevantInfo || result.thingsToKeepInMind || [],
+    nextSteps: result.nextSteps || result.whatToCheckNext || [],
+    suggestedReply: result.suggestedReply || "",
+    references: result.references || []
   };
 }
 
 /* -------------------------------------------------------
-   Insert suggested reply (plain text) using write/writeSC
-   Your tenant exposes cmdNames: write, writeSC. [2](https://developers.liveperson.com/agent-workspace-widget-sdk-methods.html)
+  Insert suggested reply (plain text) using write/writeSC
 ------------------------------------------------------- */
 async function insertReply(rawText) {
   await ensureSDK();
-
   const sdk = lpTag.agentSDK;
   const c = sdk.cmdNames || {};
-
   const plain = stripFormatting(rawText).trim();
   if (!plain) return;
-
   const payload = { text: plain };
   const tryCmd = (name) => new Promise(res => sdk.command(name, payload, () => res(true), () => res(false)));
-
   if (c.write && await tryCmd(c.write)) return;
   if (c.writeSC && await tryCmd(c.writeSC)) return;
 }
 
 /* -------------------------------------------------------
-   Timestamp
+  Timestamp
 ------------------------------------------------------- */
 function updateTimestamp() {
   const el = document.getElementById("timestamp");
@@ -293,14 +320,13 @@ function updateTimestamp() {
 }
 
 /* -------------------------------------------------------
-   References UI (collapsed)
+  References UI (collapsed)
 ------------------------------------------------------- */
 function renderReferences(refs) {
   const section = document.getElementById("referencesSection");
-  const toggle  = document.getElementById("referencesToggle");
-  const list    = document.getElementById("referencesList");
+  const toggle = document.getElementById("referencesToggle");
+  const list = document.getElementById("referencesList");
 
-  // Defensive guard: if markup changes, fail silently
   if (!section || !toggle || !list) {
     console.debug("[BRAVO] References UI elements missing; skipping renderReferences()");
     return;
@@ -308,7 +334,6 @@ function renderReferences(refs) {
 
   const arr = Array.isArray(refs) ? refs : [];
 
-  // No references → hide entire section
   if (!arr.length) {
     section.style.display = "none";
     list.style.display = "none";
@@ -316,11 +341,9 @@ function renderReferences(refs) {
     return;
   }
 
-  // Render list
   list.innerHTML = arr.map(r => {
     const title = r?.title || r?.url || "Reference";
-    const url   = r?.url || "#";
-
+    const url = r?.url || "#";
     return `
       <li>
         <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
@@ -330,12 +353,10 @@ function renderReferences(refs) {
     `;
   }).join("");
 
-  // Show collapsed by default
   section.style.display = "block";
   list.style.display = "none";
   toggle.innerHTML = `▶ ${arr.length} reference(s)`;
 
-  // Toggle behaviour
   toggle.onclick = () => {
     const expanded = list.style.display === "block";
     list.style.display = expanded ? "none" : "block";
@@ -344,13 +365,13 @@ function renderReferences(refs) {
 }
 
 /* -------------------------------------------------------
-   State + rendering
+  State + rendering
 ------------------------------------------------------- */
 const state = {
   convId: "",
   customerMessages: [],
   bravo: null,
-  suggestedReplyRaw: ""   // keep raw (with formatting tokens)
+  suggestedReplyRaw: ""
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -366,9 +387,8 @@ function clearBravoUI() {
 }
 
 function renderBravo(bravo) {
-  // lists support rich text tokens safely
   const relevant = Array.isArray(bravo.relevantInfo) ? bravo.relevantInfo : [];
-  const steps    = Array.isArray(bravo.nextSteps) ? bravo.nextSteps : [];
+  const steps = Array.isArray(bravo.nextSteps) ? bravo.nextSteps : [];
 
   $("#thingsList").innerHTML = relevant.length
     ? relevant.map(t => `<li>${formatRichText(t)}</li>`).join("")
@@ -378,10 +398,8 @@ function renderBravo(bravo) {
     ? steps.map(s => `<li>${formatRichText(s)}</li>`).join("")
     : "";
 
-  // suggested reply (render rich text in the box; store raw for insertion)
   state.suggestedReplyRaw = typeof bravo.suggestedReply === "string" ? bravo.suggestedReply : "";
   const box = $("#suggestedReplyBox");
-
   if (state.suggestedReplyRaw.trim()) {
     box.classList.remove("placeholder");
     box.innerHTML = formatRichText(state.suggestedReplyRaw);
@@ -395,19 +413,15 @@ function renderBravo(bravo) {
 
 function render() {
   const connected = !!state.convId;
-
   $("#convId").textContent = connected ? state.convId : "(no active conversation)";
   $("#assistContent").style.display = connected ? "block" : "none";
 
-  // Latest customer messages
   $("#msgs").textContent = connected
     ? state.customerMessages.map(m => `🧑 ${m}`).join("\n")
     : "";
 
-  // Empty state logic
   $("#emptyState").style.display = (connected && !state.bravo) ? "block" : "none";
 
-  // Apply BRAVO output or clear
   if (connected && state.bravo) renderBravo(state.bravo);
   else if (connected) clearBravoUI();
 
@@ -415,7 +429,7 @@ function render() {
 }
 
 /* -------------------------------------------------------
-   Refresh: get LP context + fetch Fake BRAVO
+  Refresh: get LP context + invoke Conversational Command
 ------------------------------------------------------- */
 async function refresh() {
   try {
@@ -434,17 +448,16 @@ async function refresh() {
 
     if (state.convId) {
       try {
-        // ✅ PASS THE REQUIRED ARGS
-        state.bravo = await fetchInsightsViaFaas({
+        state.bravo = await fetchInsightsViaCommand({
           conversationId: state.convId,
           messages: state.customerMessages
         });
       } catch (e) {
-        console.error("[BRAVO] FaaS invoke failed:", e);
+        console.error("[BRAVO] Command invoke failed:", e);
         state.bravo = null;
       }
     } else {
-      console.warn("[BRAVO] No conversation id yet; skipping FaaS invoke");
+      console.warn("[BRAVO] No conversation id yet; skipping invoke");
       state.bravo = null;
     }
 
@@ -456,10 +469,9 @@ async function refresh() {
 }
 
 /* -------------------------------------------------------
-   Auto-connect once: first conversation -> refresh once
+  Auto-connect once: first conversation -> refresh once
 ------------------------------------------------------- */
 let connectedOnce = false;
-
 async function autoConnectOnce() {
   await ensureSDK();
   lpTag.agentSDK.bind("chatTranscript.lines", async (data) => {
@@ -474,24 +486,13 @@ async function autoConnectOnce() {
 }
 
 /* -------------------------------------------------------
-   Wire up
+  Wire up
 ------------------------------------------------------- */
 $("#btnRefresh").onclick = refresh;
 $("#btnInsert").onclick = () => insertReply(state.suggestedReplyRaw);
 
-// Initial render (idle)
 render();
 autoConnectOnce();
 </script>
-
 </body>
 </html>
-
-
-
-
-
-
-
-
-
