@@ -28,7 +28,7 @@
   </div>
 
   <div class="row"><b>Conversation ID:</b> <span id="convId">(none)</span></div>
-  <div class="row"><b>Counts:</b> <span id="counts">(waiting…)</span></div>
+  <div class="row"><b>Transcript lines count:</b> <span id="counts">(waiting…)</span></div>
 
   <!-- ✅ Minimal Spark ID display (additive only) -->
   <div class="row"><b>Spark ID:</b> <span id="sparkId">(not available)</span></div>
@@ -193,7 +193,7 @@ const state = {
 
 function render() {
   document.getElementById("convId").textContent = state.convId || "(none)";
-  document.getElementById("counts").textContent = `total=${state.lines.length}`;
+  document.getElementById("counts").textContent = `${state.lines.length}`;
 
   // Spark ID UI
   document.getElementById("sparkId").textContent = state.sparkId || "(not available)";
@@ -302,3 +302,4 @@ start().catch(err => {
 </script>
 </body>
 </html>
+
