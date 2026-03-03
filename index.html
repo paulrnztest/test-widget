@@ -217,11 +217,7 @@ async function getCustomerMessages(limit = 12) {
 }
 
 /* -------------------------------------------------------
-   Fake BRAVO (static file) camelCase contract:
-     - relevantInfo: string[]
-     - nextSteps: string[]
-     - suggestedReply: string
-     - references: { title: string, url: string }[]
+   Fetch insights via FaaS
 ------------------------------------------------------- */
 
 // DEMO ONLY – token broker replaces this
@@ -430,7 +426,7 @@ async function refresh() {
 
     if (state.convId) {
       try {
-        state.bravo = await fetchFakeBravo();
+        state.bravo = await fetchInsightsViaFaas();
       } catch {
         state.bravo = null;
       }
@@ -476,6 +472,7 @@ autoConnectOnce();
 
 </body>
 </html>
+
 
 
 
