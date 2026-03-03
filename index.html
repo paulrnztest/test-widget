@@ -10,6 +10,7 @@
   <style>
     body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
     h3 { margin: 0 0 6px 0; }
+    h4 { margin: 14px 0 6px; }
     .muted { color:#666; font-size:12px; }
     .row { margin: 8px 0; }
     button { padding:6px 10px; cursor:pointer; }
@@ -20,26 +21,47 @@
       white-space: pre-wrap;
     }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; }
+    .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 6px 10px;
+      align-items: baseline;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 12px; }
   </style>
 </head>
 
 <body>
-  <h3>Example Widget <span class="badge">1.4.4</span></h3>
+  <h3>Example Widget <span class="badge">1.4.5</span></h3>
+
   <div class="muted">
-    Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
+    Demonstrates reading conversation context from <code>chatTranscript.lines</code>, resolving Spark ID from public model metadata,
+    and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
   </div>
 
-  <div class="row"><b>Conversation ID:</b> <span id="convId">(none)</span></div>
-  <div class="row"><b>Counts:</b> <span id="counts">(waiting…)</span></div>
+  <div class="row grid">
+    <b>Conversation ID:</b> <span id="convId">(none)</span>
+    <b>Counts:</b> <span id="counts">(waiting…)</span>
+    <b>Spark ID:</b> <span id="sparkId">(not available)</span>
+    <b>Auth flag:</b> <span id="sparkAuth">(unknown)</span>
+    <b>Source path:</b> <span id="sparkSource">(n/a)</span>
+  </div>
 
-  <h4>Latest conversation lines (raw → simplified)</h4>
+  <div class="row muted" id="sparkNote"></div>
+
+  <h4>Latest conversation lines (raw source)</h4>
   <pre id="lines">(waiting for conversation…)</pre>
 
   <h4>Draft reply (editable)</h4>
-  <div class="muted">Type anything here, then click “Insert into reply box”. This inserts plain text (formatting stripped) into the LivePerson composer.</div>
+  <div class="muted">
+    Type anything here, then click “Insert into reply box”. This inserts plain text (formatting stripped) into the LivePerson composer.
+  </div>
   <div class="row">
     <textarea id="draft" rows="5" placeholder="Type a draft reply…"></textarea>
   </div>
+
   <div class="row">
     <button id="btnInsert" disabled>↩ Insert into reply box</button>
     <span id="status" class="muted"></span>
@@ -67,10 +89,43 @@ async function ensureSDK() {
 }
 
 /* -------------------------------------------------------
+   bindOnce helper (safe one-shot read via bind/unbind)
+   (LP public model values may not exist; returns null if not available)
+------------------------------------------------------- */
+function bindOnce(path, timeoutMs = 2500) {
+  return new Promise(async (resolve) => {
+    let done = false;
+    const sdk = lpTag.agentSDK;
+
+    const cb = (data) => {
+      if (done) return;
+      done = true;
+      try { sdk.unbind(path, cb); } catch {}
+      resolve(data);
+    };
+
+    try {
+      sdk.bind(path, cb, () => {
+        // bind completion callback (optional) - if it errors, we still resolve via timeout
+      });
+    } catch {
+      return resolve(null);
+    }
+
+    // timeout so we don't hang if key isn't present
+    setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { sdk.unbind(path, cb); } catch {}
+      resolve(null);
+    }, timeoutMs);
+  });
+}
+
+/* -------------------------------------------------------
    Helpers
 ------------------------------------------------------- */
 function stripFormatting(raw) {
-  // Keep it simple: remove common markdown tokens used in your PoC
   return String(raw ?? "")
     .replace(/\_\_(.+?)\_\_/g, "$1")
     .replace(/\*\*(.+?)\*\*/g, "$1")
@@ -91,12 +146,115 @@ function simplifyLine(line) {
 }
 
 /* -------------------------------------------------------
+   Spark ID resolver helper
+   - Looks for an email-like identifier
+   - Tries authenticatedData first, then visitorInfo
+   - Also reads visitorInfo.visitorSso as an auth hint
+   (Spark guidance references email in LP personal/auth info) [3](https://teams.microsoft.com/l/message/19:89ab61cf78c54f76bb21ff436d0fbce9@thread.v2/1772419122136?context=%7B%22contextType%22:%22chat%22%7D)
+   (LP public model includes authenticatedData/visitorInfo) [1](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
+------------------------------------------------------- */
+function looksLikeEmail(s) {
+  return typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
+function extractEmailFromUnknown(value) {
+  if (!value) return null;
+
+  // direct string
+  if (looksLikeEmail(value)) return value.trim();
+
+  // array (often array of {value: "..."} etc)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (looksLikeEmail(item)) return item.trim();
+      if (looksLikeEmail(item?.value)) return item.value.trim();
+      if (looksLikeEmail(item?.email)) return item.email.trim();
+      const maybe = item?.data?.value || item?.data?.email;
+      if (looksLikeEmail(maybe)) return maybe.trim();
+    }
+  }
+
+  // object
+  if (typeof value === "object") {
+    for (const k of ["value", "email", "mail", "sparkId", "id"]) {
+      if (looksLikeEmail(value[k])) return value[k].trim();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve Spark ID (email-like) from LP public model.
+ * Returns: { sparkId, isAuthenticated, sourcePath, note }
+ */
+async function resolveSparkId() {
+  // 1) auth hint flag
+  let isAuthenticated = null;
+  try {
+    const sso = await bindOnce("visitorInfo.visitorSso");
+    if (sso && typeof sso.newValue !== "undefined") {
+      isAuthenticated = !!sso.newValue;
+    }
+  } catch {}
+
+  // 2) try authenticatedData first (best signal if present)
+  const authPaths = [
+    "authenticatedData.customerDetails",
+    "authenticatedData.personalInfo"
+  ];
+
+  for (const path of authPaths) {
+    try {
+      const d = await bindOnce(path);
+      const email = extractEmailFromUnknown(d?.newValue);
+      if (email) {
+        return {
+          sparkId: email,
+          isAuthenticated,
+          sourcePath: path,
+          note: "Found email-like identifier in authenticatedData."
+        };
+      }
+    } catch {}
+  }
+
+  // 3) fallback: visitorInfo.visitorName often holds Spark ID in Spark App messaging
+  try {
+    const v = await bindOnce("visitorInfo.visitorName");
+    const email = extractEmailFromUnknown(v?.newValue);
+    if (email) {
+      return {
+        sparkId: email,
+        isAuthenticated,
+        sourcePath: "visitorInfo.visitorName",
+        note: "Found email-like identifier in visitorInfo.visitorName."
+      };
+    }
+  } catch {}
+
+  // 4) not found
+  const note = (isAuthenticated === true)
+    ? "Visitor appears authenticated (visitorSso=true) but Spark ID email was not found in the expected public model paths for this conversation."
+    : "Spark ID not available (likely not an authenticated Spark App conversation, or the public model does not expose it for this channel).";
+
+  return {
+    sparkId: null,
+    isAuthenticated,
+    sourcePath: null,
+    note
+  };
+}
+
+/* -------------------------------------------------------
    Insert reply using Agent SDK command
+   IMPORTANT: keep behaviour aligned with known working version:
+   try write first, then writeSC. [2](https://sparknz.sharepoint.com/sites/gncismicvoice/_layouts/15/Doc.aspx?sourcedoc=%7B3DECB2D8-E63F-49B0-B112-991C74CA54FD%7D&file=PureCloud%20VoIP%20Handbook.docx&action=default&mobileredirect=true&DefaultItemOpen=1)[2](https://sparknz.sharepoint.com/sites/gncismicvoice/_layouts/15/Doc.aspx?sourcedoc=%7B3DECB2D8-E63F-49B0-B112-991C74CA54FD%7D&file=PureCloud%20VoIP%20Handbook.docx&action=default&mobileredirect=true&DefaultItemOpen=1)
 ------------------------------------------------------- */
 async function insertReply(rawText) {
   await ensureSDK();
   const sdk = lpTag.agentSDK;
-  const c = sdk.cmdNames || {};
+  const cmd = sdk.cmdNames || {};
   const plain = stripFormatting(rawText).trim();
   if (!plain) return { ok: false, reason: "empty" };
 
@@ -107,9 +265,9 @@ async function insertReply(rawText) {
       sdk.command(name, payload, () => resolve(true), () => resolve(false))
     );
 
-  // ✅ Try write FIRST (older version behavior), then fallback to writeSC
-  if (c.write && await tryCmd(c.write)) return { ok: true, used: "write" };
-  if (c.writeSC && await tryCmd(c.writeSC)) return { ok: true, used: "writeSC" };
+  // Try write first, then writeSC (matches prior working behaviour)
+  if (cmd.write && await tryCmd(cmd.write)) return { ok: true, used: "write" };
+  if (cmd.writeSC && await tryCmd(cmd.writeSC)) return { ok: true, used: "writeSC" };
 
   return { ok: false, reason: "no-supported-command" };
 }
@@ -120,23 +278,26 @@ async function insertReply(rawText) {
 const state = {
   convId: "",
   lines: [],
-  lastSummary: ""
+  spark: { sparkId: null, isAuthenticated: null, sourcePath: null, note: "" }
 };
 
 function render() {
-  document.getElementById("convId").textContent =
-    state.convId || "(none)";
+  document.getElementById("convId").textContent = state.convId || "(none)";
+  document.getElementById("counts").textContent = `total=${state.lines.length}`;
 
-  // Simplify lines using raw source/by only
+  // Spark ID fields
+  document.getElementById("sparkId").textContent =
+    state.spark?.sparkId || "(not available)";
+  document.getElementById("sparkAuth").textContent =
+    (state.spark?.isAuthenticated === null) ? "(unknown)" : String(state.spark.isAuthenticated);
+  document.getElementById("sparkSource").textContent =
+    state.spark?.sourcePath || "(n/a)";
+  document.getElementById("sparkNote").textContent =
+    state.spark?.note || "";
+
   const simplified = state.lines.map(simplifyLine);
-
-  document.getElementById("counts").textContent =
-    `total=${state.lines.length}`;
-
   const tail = simplified.slice(-25);
-  const lastRaw = state.lines.length
-    ? state.lines[state.lines.length - 1]
-    : null;
+  const lastRaw = state.lines.length ? state.lines[state.lines.length - 1] : null;
 
   const output =
     tail.map(l => {
@@ -144,7 +305,6 @@ function render() {
         .toString()
         .replace(/\s+/g, " ")
         .trim();
-
       return `[${l.source}] ${snippet}`;
     }).join("\n") +
     `\n\n# Last raw line (debug)\n` +
@@ -152,23 +312,47 @@ function render() {
 
   document.getElementById("lines").textContent = output;
 
-  // Enable insert button only when conversation + draft exist
+  // Enable insert button only when there is an active conversation AND draft has text
   const draft = document.getElementById("draft").value.trim();
-  document.getElementById("btnInsert").disabled =
-    !(state.convId && draft);
+  document.getElementById("btnInsert").disabled = !(state.convId && draft);
 }
+
+/* -------------------------------------------------------
+   Start + bind updates
+------------------------------------------------------- */
+let _sparkResolveInFlight = false;
+let _sparkResolvedForConvId = "";
 
 async function start() {
   await ensureSDK();
 
   // Bind to transcript lines; LivePerson pushes updates when conversation changes
-  lpTag.agentSDK.bind("chatTranscript.lines", data => {
+  lpTag.agentSDK.bind("chatTranscript.lines", async (data) => {
     const lines = data?.newValue || [];
     state.lines = Array.isArray(lines) ? lines : [];
 
-    // Derive conversation ID from last line dialogId (same approach as your PoC)
+    // Derive conversation ID from last line dialogId
     const latest = state.lines.length ? state.lines[state.lines.length - 1] : null;
-    state.convId = latest?.dialogId || "";
+    const newConvId = latest?.dialogId || "";
+    state.convId = newConvId;
+
+    // Resolve Spark ID only when we have a convId and it changes
+    if (state.convId && state.convId !== _sparkResolvedForConvId && !_sparkResolveInFlight) {
+      _sparkResolveInFlight = true;
+      try {
+        state.spark = await resolveSparkId();
+        _sparkResolvedForConvId = state.convId;
+      } catch (e) {
+        console.error("[SparkID] resolve failed", e);
+        state.spark = { sparkId: null, isAuthenticated: null, sourcePath: null, note: "Spark ID resolve failed (see console)." };
+        _sparkResolvedForConvId = state.convId;
+      } finally {
+        _sparkResolveInFlight = false;
+      }
+    } else if (!state.convId) {
+      state.spark = { sparkId: null, isAuthenticated: null, sourcePath: null, note: "No active conversation yet." };
+      _sparkResolvedForConvId = "";
+    }
 
     render();
   });
@@ -200,6 +384,3 @@ start().catch(err => {
 </script>
 </body>
 </html>
-
-
-
