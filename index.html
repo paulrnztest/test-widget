@@ -223,10 +223,42 @@ async function getCustomerMessages(limit = 12) {
      - suggestedReply: string
      - references: { title: string, url: string }[]
 ------------------------------------------------------- */
-async function fetchFakeBravo() {
-  const res = await fetch("./fake-bravo/default.json", { cache: "no-store" });
-  if (!res.ok) throw new Error("Fake BRAVO unavailable");
-  return res.json();
+
+const FAAS_INVOKE_URL =
+  "https://ause1.fninvocations.liveperson.net/api/account/54523770/lambdas/28d32d47-8a8f-441a-a36b-7cd59382f51f/invoke?userId=1276314470";
+
+async function fetchInsightsViaFaas({ conversationId, messages }) {
+  const res = await fetch(FAAS_INVOKE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${DEMO_ACCESS_TOKEN}`
+    },
+    body: JSON.stringify({
+      timestamp: Date.now(),
+      headers: [],
+      payload: {
+        conversationId,
+        messages,
+        mode: "suggestions"
+      }
+    })
+  });
+
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Invoke failed ${res.status}: ${t}`);
+  }
+
+  const faas = await res.json();
+
+  // Map function output → widget contract
+  return {
+    relevantInfo: faas.thingsToKeepInMind || [],
+    nextSteps: faas.whatToCheckNext || [],
+    suggestedReply: faas.suggestedReply || "",
+    references: faas.references || []
+  };
 }
 
 /* -------------------------------------------------------
@@ -437,5 +469,6 @@ autoConnectOnce();
 
 </body>
 </html>
+
 
 
