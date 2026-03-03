@@ -59,7 +59,7 @@
 
 <body>
 
-  <h3>BRAVO — Agent Assist <span class="badge">preview 1.1.3</span></h3>
+  <h3>BRAVO — Agent Assist <span class="badge">preview 1.1.4</span></h3>
   <div class="muted">
     Real‑time guidance based on the current conversation.
     Review before sending — you’re always in control.
@@ -419,25 +419,39 @@ function render() {
 ------------------------------------------------------- */
 async function refresh() {
   try {
+    console.log("[BRAVO] refresh() start");
     await ensureSDK();
+    console.log("[BRAVO] SDK ready");
 
-    state.convId = await getConversationId();
-    state.customerMessages = await getCustomerMessages(12);
+    const convId = await getConversationId();
+    console.log("[BRAVO] convId =", convId);
+
+    const customerMessages = await getCustomerMessages(12);
+    console.log("[BRAVO] customerMessages count =", customerMessages.length);
+
+    state.convId = convId;
+    state.customerMessages = customerMessages;
 
     if (state.convId) {
       try {
-        state.bravo = await fetchInsightsViaFaas();
-      } catch {
+        // ✅ PASS THE REQUIRED ARGS
+        state.bravo = await fetchInsightsViaFaas({
+          conversationId: state.convId,
+          messages: state.customerMessages
+        });
+      } catch (e) {
+        console.error("[BRAVO] FaaS invoke failed:", e);
         state.bravo = null;
       }
     } else {
+      console.warn("[BRAVO] No conversation id yet; skipping FaaS invoke");
       state.bravo = null;
     }
 
     updateTimestamp();
     render();
   } catch (e) {
-    console.error(e);
+    console.error("[BRAVO] refresh() error:", e);
   }
 }
 
@@ -472,6 +486,7 @@ autoConnectOnce();
 
 </body>
 </html>
+
 
 
 
