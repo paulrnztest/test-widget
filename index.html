@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Example Widget</title>
+  <title>Example Widget (Probe Spark ID)</title>
   <!-- LivePerson Agent Workspace Widget SDK -->
   <script src="https://lpcdn.lpsnmedia.net/webagent/client-SDK.min.js"></script>
   <style>
     body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:16px; }
     h3 { margin: 0 0 6px 0; }
+    h4 { margin: 14px 0 6px; }
     .muted { color:#666; font-size:12px; }
     .row { margin: 8px 0; }
     button { padding:6px 10px; cursor:pointer; }
@@ -17,33 +18,57 @@
       max-height:260px; overflow:auto; font-size:13px;
       white-space: pre-wrap;
     }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; }
     .badge { background:#e8e8e8; padding:3px 6px; border-radius:6px; font-size:11px; }
-    .grid { display:grid; grid-template-columns: 120px 1fr; gap:6px 10px; align-items:baseline; }
+    .grid { display:grid; grid-template-columns: 140px 1fr; gap:6px 10px; align-items:baseline; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
+    th { background: #f3f3f3; text-align: left; }
+    .ok { color: #0a7a0a; font-weight: 600; }
+    .warn { color: #a35a00; font-weight: 600; }
   </style>
 </head>
 <body>
-  <h3>Example Widget <span class="badge">1.4.6</span></h3>
+  <h3>Example Widget <span class="badge">probe 1.5.0</span></h3>
   <div class="muted">
-    Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
+    Shows transcript lines and <b>logs all likely metadata locations</b> for Spark ID (email) from the Agent Widget public model.
   </div>
 
   <div class="row grid">
     <b>Conversation ID:</b> <span id="convId">(none)</span>
     <b>Counts:</b> <span id="counts">(waiting…)</span>
-
-    <!-- NEW: Spark ID metadata (read-only) -->
-    <b>Spark ID:</b> <span id="sparkId">(not available)</span>
-    <b>Auth flag:</b> <span id="sparkAuth">(unknown)</span>
-    <b>Source:</b> <span id="sparkSource">(n/a)</span>
   </div>
-  <div class="row muted" id="sparkNote"></div>
 
-  <h4>Latest conversation lines (raw → simplified)</h4>
+  <h4>Candidate Spark ID values (email-like)</h4>
+  <div class="muted">
+    This table is built from probing multiple public model paths (visitorInfo, authenticatedData, SDE, etc.). [1](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
+  </div>
+  <div class="row">
+    <button id="btnProbe">🔎 Probe metadata now</button>
+    <span id="probeStatus" class="muted"></span>
+  </div>
+  <div class="row">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 280px;">Model path</th>
+          <th style="width: 180px;">Field/label</th>
+          <th>Value (email-like)</th>
+        </tr>
+      </thead>
+      <tbody id="candidatesBody">
+        <tr><td colspan="3" class="muted">(no probe run yet)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Latest conversation lines (raw source)</h4>
   <pre id="lines">(waiting for conversation…)</pre>
 
   <h4>Draft reply (editable)</h4>
-  <div class="muted">Type anything here, then click “Insert into reply box”. This inserts plain text (formatting stripped) into the LivePerson composer.</div>
+  <div class="muted">
+    Type anything here, then click “Insert into reply box”. This inserts plain text (formatting stripped) into the LivePerson composer.
+  </div>
   <div class="row">
     <textarea id="draft" rows="5" placeholder="Type a draft reply…"></textarea>
   </div>
@@ -54,7 +79,7 @@
 
 <script>
 /* -------------------------------------------------------
-  SDK init (UNCHANGED)
+  SDK init
 ------------------------------------------------------- */
 async function waitForAgentSDK(timeoutMs = 8000) {
   const start = Date.now();
@@ -73,7 +98,37 @@ async function ensureSDK() {
 }
 
 /* -------------------------------------------------------
-  Helpers (UNCHANGED)
+  bindOnce helper (one-shot read via bind/unbind)
+------------------------------------------------------- */
+function bindOnce(path, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const sdk = lpTag.agentSDK;
+
+    const cb = (data) => {
+      if (done) return;
+      done = true;
+      try { sdk.unbind(path, cb); } catch {}
+      resolve(data);
+    };
+
+    try {
+      sdk.bind(path, cb, () => {});
+    } catch {
+      return resolve(null);
+    }
+
+    setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { sdk.unbind(path, cb); } catch {}
+      resolve(null);
+    }, timeoutMs);
+  });
+}
+
+/* -------------------------------------------------------
+  Helpers
 ------------------------------------------------------- */
 function stripFormatting(raw) {
   return String(raw ?? "")
@@ -92,41 +147,81 @@ function simplifyLine(line) {
     dialogId: line?.dialogId || ""
   };
 }
-
-/* -------------------------------------------------------
-  NEW: Spark ID resolver (additive only; does not affect flow)
-  - Uses LP public model paths (authenticatedData + visitorInfo). [2](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
-  - Spark App auth guidance expects agent to locate email/Spark ID in LP view. [3](https://teams.microsoft.com/l/message/19:89ab61cf78c54f76bb21ff436d0fbce9@thread.v2/1772419122136?context=%7B%22contextType%22:%22chat%22%7D)
-------------------------------------------------------- */
 function looksLikeEmail(s) {
   return typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
-function extractEmailFromUnknown(value) {
-  if (!value) return null;
-  if (looksLikeEmail(value)) return value.trim();
 
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (looksLikeEmail(item)) return item.trim();
-      if (looksLikeEmail(item?.value)) return item.value.trim();
-      if (looksLikeEmail(item?.email)) return item.email.trim();
-      const maybe = item?.data?.value || item?.data?.email;
-      if (looksLikeEmail(maybe)) return maybe.trim();
+/**
+ * Walk any value and collect email-like strings.
+ * Returns array of { label, value } where label is a best-effort "field name".
+ */
+function collectEmailsDeep(value, labelPrefix = "") {
+  const out = [];
+
+  const seen = new WeakSet();
+  const visit = (v, path) => {
+    if (looksLikeEmail(v)) {
+      out.push({ label: path || labelPrefix || "(value)", value: v.trim() });
+      return;
+    }
+    if (!v) return;
+    if (typeof v !== "object") return;
+
+    if (seen.has(v)) return;
+    seen.add(v);
+
+    if (Array.isArray(v)) {
+      v.forEach((item, idx) => visit(item, `${path}[${idx}]`));
+      return;
+    }
+
+    for (const [k, vv] of Object.entries(v)) {
+      const nextPath = path ? `${path}.${k}` : k;
+      visit(vv, nextPath);
+    }
+  };
+
+  visit(value, labelPrefix);
+  return out;
+}
+
+/**
+ * Heuristic for “Personal info → Email address” style arrays:
+ * look for objects with displayName/name/key containing “email”.
+ */
+function collectEmailsFromLabeledArray(arr, labelFieldCandidates = ["displayName","name","key","type"], valueFieldCandidates = ["value","email","val"]) {
+  const out = [];
+  if (!Array.isArray(arr)) return out;
+
+  for (const item of arr) {
+    const label =
+      labelFieldCandidates
+        .map(k => item?.[k])
+        .find(v => typeof v === "string" && v.length) || "";
+
+    const labelLower = label.toLowerCase();
+
+    // prefer items that look like "Email address"
+    const isEmailLabel = labelLower.includes("email") || labelLower.includes("mail");
+
+    const values = [];
+    for (const k of valueFieldCandidates) values.push(item?.[k]);
+    values.push(item?.data?.value, item?.data?.email);
+
+    for (const v of values) {
+      if (looksLikeEmail(v)) {
+        out.push({ label: label || "(email field)", value: v.trim(), preferred: isEmailLabel });
+      }
     }
   }
 
-  if (typeof value === "object") {
-    for (const k of ["value", "email", "mail", "sparkId", "id"]) {
-      if (looksLikeEmail(value[k])) return value[k].trim();
-    }
-  }
-
-  return null;
+  // sort so email-labeled items float to top
+  out.sort((a,b) => (b.preferred?1:0) - (a.preferred?1:0));
+  return out.map(({label,value}) => ({label,value}));
 }
 
 /* -------------------------------------------------------
-  Insert reply using Agent SDK command
-  IMPORTANT: keep known working order: write -> writeSC [1](https://sparknz.sharepoint.com/sites/gncismicvoice/_layouts/15/Doc.aspx?sourcedoc=%7B3DECB2D8-E63F-49B0-B112-991C74CA54FD%7D&file=PureCloud%20VoIP%20Handbook.docx&action=default&mobileredirect=true&DefaultItemOpen=1)[1](https://sparknz.sharepoint.com/sites/gncismicvoice/_layouts/15/Doc.aspx?sourcedoc=%7B3DECB2D8-E63F-49B0-B112-991C74CA54FD%7D&file=PureCloud%20VoIP%20Handbook.docx&action=default&mobileredirect=true&DefaultItemOpen=1)
+  Insert reply (KEEP EXISTING LOGIC: write first, then writeSC)
 ------------------------------------------------------- */
 async function insertReply(rawText) {
   await ensureSDK();
@@ -136,6 +231,7 @@ async function insertReply(rawText) {
   if (!plain) return { ok: false, reason: "empty" };
 
   const payload = { text: plain };
+
   const tryCmd = (name) =>
     new Promise(resolve =>
       sdk.command(name, payload, () => resolve(true), () => resolve(false))
@@ -147,27 +243,17 @@ async function insertReply(rawText) {
 }
 
 /* -------------------------------------------------------
-  Bind to conversation transcript (UNCHANGED behaviour)
+  State + render
 ------------------------------------------------------- */
 const state = {
   convId: "",
-  lines: [],
-  // NEW: spark metadata (purely additive)
-  spark: { id: null, isAuthenticated: null, source: null, note: "" }
+  lines: []
 };
 
 function render() {
   document.getElementById("convId").textContent = state.convId || "(none)";
   document.getElementById("counts").textContent = `total=${state.lines.length}`;
 
-  // NEW: Spark fields (display-only)
-  document.getElementById("sparkId").textContent = state.spark.id || "(not available)";
-  document.getElementById("sparkAuth").textContent =
-    (state.spark.isAuthenticated === null) ? "(unknown)" : String(state.spark.isAuthenticated);
-  document.getElementById("sparkSource").textContent = state.spark.source || "(n/a)";
-  document.getElementById("sparkNote").textContent = state.spark.note || "";
-
-  // transcript output (raw source)
   const simplified = state.lines.map(simplifyLine);
   const tail = simplified.slice(-25);
   const lastRaw = state.lines.length ? state.lines[state.lines.length - 1] : null;
@@ -189,57 +275,130 @@ function render() {
   document.getElementById("btnInsert").disabled = !(state.convId && draft);
 }
 
+/* -------------------------------------------------------
+  Metadata probe: bindOnce on many likely paths + log raw
+  Public model paths based on LP doc structure. [1](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
+------------------------------------------------------- */
+const PROBE_PATHS = [
+  // Visitor info
+  "visitorInfo.visitorName",
+  "visitorInfo.visitorId",
+  "visitorInfo.visitorSso",
+
+  // Authenticated data
+  "authenticatedData.customerDetails",
+  "authenticatedData.personalInfo",
+
+  // SDE + authenticatedData (both are in the public model doc)
+  "SDE.customerDetails",
+  "SDE.personalInfo",
+
+  // Claims/auth type sometimes includes identifiers
+  "claimsAndAuthType.claims",
+  "claimsAndAuthType.acr",
+
+  // Survey/prechat sometimes holds email (less likely for in-app but worth logging)
+  "surveyQuestions.preChat.email.value",
+  "surveyQuestions.preChat.email",
+  "surveyQuestions.preChat.name.value",
+
+  // Engagement info sometimes contains skill/notes; not Spark ID but useful context
+  "engagementInfo.agentNote",
+  "engagementInfo.skill"
+];
+
+function renderCandidates(candidates) {
+  const tbody = document.getElementById("candidatesBody");
+  if (!candidates.length) {
+    tbody.innerHTML = `<tr><td colspan="3" class="muted">(no email-like values found in probed paths)</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = candidates.map(c => `
+    <tr>
+      <td><code>${c.path}</code></td>
+      <td><code>${c.label || ""}</code></td>
+      <td>${c.value}</td>
+    </tr>
+  `).join("");
+}
+
+async function probeMetadata() {
+  const status = document.getElementById("probeStatus");
+  status.textContent = "Probing… (check console for raw payloads)";
+  const candidates = [];
+
+  for (const path of PROBE_PATHS) {
+    let data = null;
+    try {
+      data = await bindOnce(path, 1500);
+    } catch (e) {
+      console.warn("[Probe] bindOnce error", path, e);
+    }
+
+    // Always log raw to console to remove ambiguity
+    console.log(`[Probe RAW] ${path}:`, data?.newValue);
+
+    const value = data?.newValue;
+
+    // If the value is an array of labeled fields (e.g. Personal info), do a label-aware extraction first
+    if (Array.isArray(value)) {
+      const labeled = collectEmailsFromLabeledArray(value);
+      labeled.forEach(x => candidates.push({ path, label: x.label, value: x.value }));
+    }
+
+    // Then do a deep scan for any email-like strings anywhere inside
+    const deep = collectEmailsDeep(value, "(root)");
+    deep.forEach(x => candidates.push({ path, label: x.label, value: x.value }));
+  }
+
+  // De-dupe identical (path + value)
+  const uniq = [];
+  const seen = new Set();
+  for (const c of candidates) {
+    const key = `${c.path}||${c.value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniq.push(c);
+  }
+
+  // Prefer items where label contains "email"
+  uniq.sort((a,b) => {
+    const ae = (a.label||"").toLowerCase().includes("email") ? 1 : 0;
+    const be = (b.label||"").toLowerCase().includes("email") ? 1 : 0;
+    return be - ae;
+  });
+
+  renderCandidates(uniq);
+
+  status.textContent = uniq.length
+    ? `Done. Found ${uniq.length} email-like value(s).`
+    : "Done. No email-like values found in the probed paths.";
+
+  // Helpful hint if visitorSso is true but no email was found
+  try {
+    const sso = await bindOnce("visitorInfo.visitorSso", 800);
+    const isSso = !!sso?.newValue;
+    if (isSso && !uniq.length) {
+      console.warn("[Probe] visitorInfo.visitorSso=true but no email-like values found. The email may be present in a different model path or in non-public UI-only metadata.");
+    }
+  } catch {}
+}
+
+/* -------------------------------------------------------
+  Start
+------------------------------------------------------- */
 async function start() {
   await ensureSDK();
 
-  // --- NEW: Spark ID bindings (do not interfere with transcript logic) ---
-  // 1) authenticatedData.customerDetails (best signal when present) [2](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
-  lpTag.agentSDK.bind("authenticatedData.customerDetails", (data) => {
-    const email = extractEmailFromUnknown(data?.newValue);
-    if (email) {
-      state.spark.id = email;
-      state.spark.source = "authenticatedData.customerDetails";
-      state.spark.note = "Spark ID resolved from authenticatedData.";
-      render();
-    }
-  });
-
-  // 2) visitorInfo.visitorName fallback (often shows Spark ID/email) [2](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
-  lpTag.agentSDK.bind("visitorInfo.visitorName", (data) => {
-    const email = extractEmailFromUnknown(data?.newValue);
-    if (email && !state.spark.id) {
-      state.spark.id = email;
-      state.spark.source = "visitorInfo.visitorName";
-      state.spark.note = "Spark ID resolved from visitorInfo.visitorName.";
-      render();
-    }
-  });
-
-  // 3) visitorInfo.visitorSso auth hint [2](https://sparknz.sharepoint.com/sites/VirtualAssistantSquad/_layouts/15/Doc.aspx?sourcedoc=%7B89107C21-0C5F-452A-97D0-1692D4613A80%7D&file=AI%20conversation%20summarization.pptx&action=edit&mobileredirect=true&DefaultItemOpen=1)
-  lpTag.agentSDK.bind("visitorInfo.visitorSso", (data) => {
-    if (typeof data?.newValue !== "undefined") {
-      state.spark.isAuthenticated = !!data.newValue;
-      if (!state.spark.note) {
-        state.spark.note = state.spark.isAuthenticated
-          ? "Visitor SSO flag is true (likely Spark App authenticated conversation)."
-          : "Visitor SSO flag is false/unknown (Spark ID may not be available).";
-      }
-      render();
-    }
-  });
-
-  // --- Existing transcript bind (UNCHANGED) ---
+  // Bind transcript lines (unchanged logic)
   lpTag.agentSDK.bind("chatTranscript.lines", data => {
     const lines = data?.newValue || [];
     state.lines = Array.isArray(lines) ? lines : [];
-
     const latest = state.lines.length ? state.lines[state.lines.length - 1] : null;
-    state.convId = latest?.dialogId || "";   // <-- unchanged existing logic
-
+    state.convId = latest?.dialogId || "";
     render();
   });
 
-  // UI handlers (UNCHANGED)
   document.getElementById("draft").addEventListener("input", render);
 
   document.getElementById("btnInsert").onclick = async () => {
@@ -254,6 +413,8 @@ async function start() {
       status.textContent = "Insert failed (see console).";
     }
   };
+
+  document.getElementById("btnProbe").onclick = probeMetadata;
 
   render();
 }
