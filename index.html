@@ -24,7 +24,7 @@
 </head>
 
 <body>
-  <h3>Example Widget <span class="badge">1.4.3</span></h3>
+  <h3>Example Widget <span class="badge">1.4.4</span></h3>
   <div class="muted">
     Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
   </div>
@@ -95,11 +95,9 @@ function simplifyLine(line) {
 ------------------------------------------------------- */
 async function insertReply(rawText) {
   await ensureSDK();
-
   const sdk = lpTag.agentSDK;
-  const cmd = sdk.cmdNames || {};
+  const c = sdk.cmdNames || {};
   const plain = stripFormatting(rawText).trim();
-
   if (!plain) return { ok: false, reason: "empty" };
 
   const payload = { text: plain };
@@ -109,9 +107,9 @@ async function insertReply(rawText) {
       sdk.command(name, payload, () => resolve(true), () => resolve(false))
     );
 
-  // Prefer writeSC (silent/secure composer insert), fallback to write
-  if (cmd.writeSC && await tryCmd(cmd.writeSC)) return { ok: true, used: "writeSC" };
-  if (cmd.write && await tryCmd(cmd.write)) return { ok: true, used: "write" };
+  // ✅ Try write FIRST (older version behavior), then fallback to writeSC
+  if (c.write && await tryCmd(c.write)) return { ok: true, used: "write" };
+  if (c.writeSC && await tryCmd(c.writeSC)) return { ok: true, used: "writeSC" };
 
   return { ok: false, reason: "no-supported-command" };
 }
@@ -202,5 +200,6 @@ start().catch(err => {
 </script>
 </body>
 </html>
+
 
 
