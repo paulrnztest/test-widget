@@ -231,6 +231,10 @@ const FAAS_INVOKE_URL =
   "https://ause1.fninvocations.liveperson.net/api/account/54523770/lambdas/28d32d47-8a8f-441a-a36b-7cd59382f51f/invoke?userId=1276314470";
 
 async function fetchInsightsViaFaas({ conversationId, messages }) {
+
+  // DEBUG
+  console.log("BRAVO: about to invoke FaaS");
+  
   const res = await fetch(FAAS_INVOKE_URL, {
     method: "POST",
     headers: {
@@ -472,6 +476,7 @@ autoConnectOnce();
 
 </body>
 </html>
+
 
 
 
