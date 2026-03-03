@@ -24,7 +24,7 @@
 </head>
 
 <body>
-  <h3>Example Widget <span class="badge">1.4.2</span></h3>
+  <h3>Example Widget <span class="badge">1.4.3</span></h3>
   <div class="muted">
     Demonstrates reading conversation context from <code>chatTranscript.lines</code> and inserting a draft reply into the agent composer using <code>cmdNames.write/writeSC</code>.
   </div>
@@ -126,41 +126,38 @@ const state = {
 };
 
 function render() {
-  document.getElementById("convId").textContent = state.convId || "(none)";
+  document.getElementById("convId").textContent =
+    state.convId || "(none)";
 
-  // Build summary counts
-  const counts = { customer: 0, agent: 0, bot: 0, other: 0 };
-  const simplified = state.lines.map(l => {
-    const c = classifyLine(l);
-    counts[c.who] = (counts[c.who] || 0) + 1;
-    return c;
-  });
+  // Simplify lines using raw source/by only
+  const simplified = state.lines.map(simplifyLine);
 
   document.getElementById("counts").textContent =
-    `customer=${counts.customer}, agent=${counts.agent}, bot=${counts.bot}, other=${counts.other}, total=${state.lines.length}`;
+    `total=${state.lines.length}`;
 
-  // Show a compact view: latest 25 simplified lines + raw metadata for last line
-  const simplified = state.lines.map(simplifyLine);
   const tail = simplified.slice(-25);
-  const lastRaw = state.lines.length ? state.lines[state.lines.length - 1] : null;
+  const lastRaw = state.lines.length
+    ? state.lines[state.lines.length - 1]
+    : null;
 
   const output =
-  simplified.slice(-25).map(l => {
-    const snippet = (l.text || "")
-      .toString()
-      .replace(/\s+/g, " ")
-      .trim();
+    tail.map(l => {
+      const snippet = (l.text || "")
+        .toString()
+        .replace(/\s+/g, " ")
+        .trim();
 
-    return `[${l.source}] ${snippet}`;
-  }).join("\n") +
+      return `[${l.source}] ${snippet}`;
+    }).join("\n") +
     `\n\n# Last raw line (debug)\n` +
     safeJson(lastRaw);
 
   document.getElementById("lines").textContent = output;
 
-  // Enable insert button only when there is an active conversation AND draft has text
+  // Enable insert button only when conversation + draft exist
   const draft = document.getElementById("draft").value.trim();
-  document.getElementById("btnInsert").disabled = !(state.convId && draft);
+  document.getElementById("btnInsert").disabled =
+    !(state.convId && draft);
 }
 
 async function start() {
@@ -205,4 +202,5 @@ start().catch(err => {
 </script>
 </body>
 </html>
+
 
